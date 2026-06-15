@@ -1,0 +1,6 @@
+[submodule "references/synaTudor"]
+	path = references/synaTudor
+	url = https://github.com/Popax21/synaTudor.git
+[submodule "references/elitebook840-fingerprint"]
+	path = references/elitebook840-fingerprint
+	url = https://github.com/MarcelineVPQ/elitebook840-fingerprint.git
