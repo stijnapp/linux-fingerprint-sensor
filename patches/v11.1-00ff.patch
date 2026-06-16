@@ -1,0 +1,122 @@
+diff --git a/libtudor/src/winapi/crypt/crypt.c b/libtudor/src/winapi/crypt/crypt.c
+index 8e7ad0d..97caaff 100644
+--- a/libtudor/src/winapi/crypt/crypt.c
++++ b/libtudor/src/winapi/crypt/crypt.c
+@@ -2,10 +2,18 @@
+ #include <openssl/rand.h>
+ #include <openssl/evp.h>
+ #include <string.h>
++#include <stdlib.h>
+ #include "crypt.h"
+ 
+ __winfnc BOOL CryptAcquireContextA(struct crypt_provider **prov, const char *cont_name, const char *prov_name, DWORD prov_type, DWORD flags) {
+     switch(prov_type) {
++        /* PROV_RSA_FULL: the v11.1 driver acquires a 'SYNA' container at enroll commit
++         * to seal/bind the template. Its import tables show it only does hashing /
++         * CryptImportKey / CryptEncrypt/Decrypt / CryptGenRandom with it (NO CryptGenKey),
++         * all of which crypt_prov_rsa_aes already services — so hand back the same provider.
++         * Rejecting it (the old default) left templates unsealed -> identify/verify never
++         * match. */
++        case PROV_RSA_FULL:
+         case PROV_RSA_AES: *prov = &crypt_prov_rsa_aes; return TRUE;
+         default: {
+             log_warn("CryptAcquireContextA | Couldn't find provider for container '%s' provider '%s' provider type 0x%x flags 0x%x", cont_name, prov_name, prov_type, flags);
+@@ -15,6 +23,18 @@ __winfnc BOOL CryptAcquireContextA(struct crypt_provider **prov, const char *con
+ }
+ WINAPI(CryptAcquireContextA)
+ 
++/* v11.1 calls the wide variant during enroll commit (acquiring a crypto context to
++ * seal the template). Container/provider names are normally NULL; just widen->narrow
++ * and delegate to the A impl. */
++__winfnc BOOL CryptAcquireContextW(struct crypt_provider **prov, const char16_t *cont_name, const char16_t *prov_name, DWORD prov_type, DWORD flags) {
++    char *cont = cont_name ? winstr_to_str(cont_name) : NULL;
++    char *provn = prov_name ? winstr_to_str(prov_name) : NULL;
++    BOOL r = CryptAcquireContextA(prov, cont, provn, prov_type, flags);
++    free(cont); free(provn);
++    return r;
++}
++WINAPI(CryptAcquireContextW)
++
+ __winfnc BOOL CryptReleaseContext(struct crypt_provider *prov, DWORD flags) {
+     return TRUE;
+ }
+diff --git a/libtudor/src/winapi/suspend.c b/libtudor/src/winapi/suspend.c
+index 25e20e9..46ca219 100644
+--- a/libtudor/src/winapi/suspend.c
++++ b/libtudor/src/winapi/suspend.c
+@@ -18,4 +18,19 @@ __winfnc DWORD PowerUnregisterSuspendResumeNotification(HANDLE handle) {
+     //TODO
+     return ERROR_SUCCESS;
+ }
+-WINAPI(PowerUnregisterSuspendResumeNotification)
+\ No newline at end of file
++WINAPI(PowerUnregisterSuspendResumeNotification)
++
++/* v11.1 (06cb:00ff) subscribes to power-SETTING change notifications (e.g. console
++ * lock, monitor power) during bring-up. No power events are delivered in the CLI
++ * context, so accept the subscription and hand back a null handle, mirroring the
++ * suspend/resume stub above. */
++__winfnc DWORD PowerSettingRegisterNotification(const GUID *setting_guid, DWORD flags, HANDLE recipient, HANDLE *out) {
++    if(out) *out = NULL;
++    return ERROR_SUCCESS;
++}
++WINAPI(PowerSettingRegisterNotification)
++
++__winfnc DWORD PowerSettingUnregisterNotification(HANDLE handle) {
++    return ERROR_SUCCESS;
++}
++WINAPI(PowerSettingUnregisterNotification)
+\ No newline at end of file
+diff --git a/libtudor/src/winapi/wdf/device.c b/libtudor/src/winapi/wdf/device.c
+index ffd727a..ae27ac2 100644
+--- a/libtudor/src/winapi/wdf/device.c
++++ b/libtudor/src/winapi/wdf/device.c
+@@ -350,6 +350,34 @@ WDFFUNC(WdfDeviceStopIdleActual, 248)
+ __winfnc void WdfDeviceResumeIdleActual(WDF_DRIVER_GLOBALS *globals, WDFOBJECT device_obj) {}
+ WDFFUNC(WdfDeviceResumeIdleActual, 249)
+ 
++/* v11.1 (06cb:00ff) calls these during EvtDeviceAdd to advertise PnP/power caps
++ * (removable, surprise-removal-ok, unique-id, wake, etc). We drive the sensor over
++ * libusb with no real PnP/power stack, so they're safe no-ops. Both are VOID in the
++ * WDF DDI. 34 is pre-added: drivers set PnP+power capabilities as a pair. */
++__winfnc void WdfDeviceSetPnpCapabilities(WDF_DRIVER_GLOBALS *globals, WDFOBJECT device_obj, void *pnp_caps) {}
++WDFFUNC(WdfDeviceSetPnpCapabilities, 33)
++
++__winfnc void WdfDeviceSetPowerCapabilities(WDF_DRIVER_GLOBALS *globals, WDFOBJECT device_obj, void *power_caps) {}
++WDFFUNC(WdfDeviceSetPowerCapabilities, 34)
++
++/* v11.1 writes a metadata property onto its device interface during bring-up. We have
++ * no real device interface (libusb), nothing reads it back, so succeed without storing.
++ * Sig: (Device, PWDF_DEVICE_INTERFACE_PROPERTY_DATA, DEVPROPTYPE, ULONG len, PVOID buf). */
++__winfnc NTSTATUS WdfDeviceAssignInterfaceProperty(WDF_DRIVER_GLOBALS *globals, WDFOBJECT device_obj, void *prop_data, DWORD type, ULONG buf_len, void *prop_buf) { return STATUS_SUCCESS; }
++WDFFUNC(WdfDeviceAssignInterfaceProperty, 50)
++
++/* v11.1 queries an interface property (allocates a WDFMEMORY out-param). We have no
++ * property store, so report "absent" — well-behaved drivers treat this as optional and
++ * skip. Null the out-params defensively. If the driver instead round-trips its OWN
++ * property here and can't tolerate not-found, escalate to a real Assign<->Query store.
++ * Sig: (Device, PropertyData, POOL_TYPE, PWDF_OBJECT_ATTRIBUTES, WDFMEMORY* out, PDEVPROPTYPE out). */
++__winfnc NTSTATUS WdfDeviceAllocAndQueryInterfaceProperty(WDF_DRIVER_GLOBALS *globals, WDFOBJECT device_obj, void *prop_data, int pool_type, WDF_OBJECT_ATTRIBUTES *mem_attrs, WDFOBJECT *out_mem, DWORD *out_type) {
++    if(out_mem) *out_mem = NULL;
++    if(out_type) *out_type = 0;
++    return STATUS_NOT_FOUND;
++}
++WDFFUNC(WdfDeviceAllocAndQueryInterfaceProperty, 51)
++
+ __winfnc NTSTATUS WdfDeviceCreateDeviceInterface(WDF_DRIVER_GLOBALS *globals, WDFOBJECT device_obj, const GUID *interface_guid, const UNICODE_STRING *ref_str) { return STATUS_SUCCESS; }
+ WDFFUNC(WdfDeviceCreateDeviceInterface, 27)
+ 
+diff --git a/libtudor/src/winapi/windows.h b/libtudor/src/winapi/windows.h
+index 46275e9..0ab981f 100644
+--- a/libtudor/src/winapi/windows.h
++++ b/libtudor/src/winapi/windows.h
+@@ -62,7 +62,8 @@ enum {
+     STATUS_PENDING = 0x00000103,
+     STATUS_CANCELLED = 0xc0000120,
+     STATUS_BUFFER_TOO_SMALL = 0xc0000023,
+-    STATUS_INVALID_SIGNATURE = 0xc000a000
++    STATUS_INVALID_SIGNATURE = 0xc000a000,
++    STATUS_NOT_FOUND = 0xc0000225
+ };
+ 
+ typedef struct {

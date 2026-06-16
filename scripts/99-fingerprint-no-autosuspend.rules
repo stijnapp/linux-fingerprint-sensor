@@ -1,0 +1,5 @@
+# Disable USB autosuspend for the Synaptics Tudor fingerprint sensor (06cb:00ff).
+# These match-in-sensor readers sleep after ~2s; the next command wakes them
+# mid-transfer and the first reply comes back corrupted ("Corrupted message
+# received" / "unsupported firmware version" / garbled pairing). Keep it awake.
+ACTION=="add", SUBSYSTEM=="usb", ATTR{idVendor}=="06cb", ATTR{idProduct}=="00ff", TEST=="power/control", ATTR{power/control}="on"
