@@ -1,0 +1,721 @@
+     4d !This program cannot be run in DOS mode.
+     a1 \'vd7"w
+     cd 7"wUF'v
+     d5 7"wUF"v
+     ed 7"wUF v
+     f5 7"wRich
+    237 `.rdata
+    25f @.data
+    288 .pdata
+    2af @_RDATA
+    2d7 @.rsrc
+    2ff @.reloc
+    550 @UVWATAUAVAWH
+    5e2 9F\t>H
+    8ef A_A^A]A\_^]
+    a82 \$ UVWH
+    e46 1.3.14.3I9
+    f55 [ UVWAVAWH
+   12ee PA_A^_^]
+   1384 pH9w8t6H
+   173c t$ WAVAWH
+   182f @A_A^_
+   1a3f WAVAWH
+   1b1b PA_A^_
+   1f8d s WATAUAVAWH
+   2182 A_A^A]A\_
+   219c |$ UATAUAVAWH
+   2516 A_A^A]A\]
+   2527 t$ UWAUAVAWH
+   29d5 A_A^A]_]
+   2a9b ;9x\u;H
+   2c90 @USVWATAUAVAWH
+   2f7c A_A^A]A\_^[]
+   2f9d s WATAUAVAWH
+   352f A_A^A]A\_
+   35d8 {89o\u7I;
+   4342 \$ UVWATAUAVAWH
+   46e1 A_A^A]A\_^]
+   46f0 @USVWATAUAVAWH
+   4c61 A_A^A]A\_^[]
+   4cc2 \$ UVWH
+   5ba5 H9w0tvH
+   5dc2 \$ UVWATAUAVAWH
+   6446 A_A^A]A\_^]
+   790b VWATAVAWH
+   7b61 A_A^A\_^
+   7b70 @SUVWATAUAVAWH
+   7da6 A_A^A]A\_^][
+   85d1 |$ AVH
+   8a2d s WAVAWH
+   8c69 @A_A^_
+   8c77 l$ VWAWH
+   9041 |$ AVH
+   9147 G@9XTt
+   920c t$ WAVAWH
+   9421 @A_A^_
+   9441 |$ AVH
+   9ae5 UVWATAUAVAWH
+   a084 A_A^A]A\_^]
+   a6dd p WATAUAVAWH
+   aba7 A_A^A]A\_
+   abcd p WAVAWH
+   b51c |$ UATAUAVAWH
+   ba97 A_A^A]A\]
+   c34d p WATAUAVAWH
+   c5e2 A_A^A]A\_
+   c5f0 @USVWATAUAVAWH
+   cbf9 A_A^A]A\_^[]
+   d36c |$ AVH
+   d986  H3E H3E
+   e578 fA;8unI
+   e862 ffffff
+   e9a5 D8L$0uP
+   eab7 UAVAWH
+   ef32 H;xXu5
+   f55f AUAVAWH
+   f6a0 u4I9}(
+   f6d5 ;I9}(tiH
+   f729 0A_A^A]
+   f823 UVWATAUAVAWH
+   f8dc `A_A^A]A\_^]
+   f8ec @USVWATAUAVAWH
+   fc2b d$dD;d$lta
+   fdc1 A_A^A]A\_^[]
+   fe18 @USVWATAUAVAWH
+  100f4 A_A^A]A\_^[]
+  1039b WAVAWH
+  10544 9t$Pu	
+  10883 SVWATAUAWH
+  10ac9 A_A]A\_^[
+  10c9b B(I9A(u
+  10d1f SVWATAUAVAWH
+  10ff0 A_A^A]A\_^[
+  11010 t$ WATAUAVAWH
+  110e0  A_A^A]A\_
+  11247 UVWATAUAVAWH
+  112f9  A_A^A]A\_^]
+  11838 @UAVAWH
+  1217a u3HcH<H
+  122e9 x ATAVAWH
+  12417 < t=<	t9
+  1248f  A_A^A\
+  124fd UVWAVAWH
+  12675 0A_A^_^]
+  126fb WAVAWH
+  127d8 0A_A^_
+  128fb WAVAWH
+  129fb  A_A^_
+  12f4a fA9	t	I
+  13a2b u"8Z(t
+  13a57 uF8Z(t
+  13ae7 vC8_(t
+  13ba3 u"8Z(t
+  13bd0 uF8Z(t
+  13c6b vB8_(t
+  13d12 UVWATAUAVAWH
+  13eef `A_A^A]A\_^]
+  13f23 WATAUAVAWH
+  13f73 0A_A^A]A\_
+  13fe0 H97u+A
+  1409e \$ UVWATAUAVAWH
+  14188 @8|$Ht
+  141a9 @8|$Ht
+  141c4 @8|$Ht
+  1425d D$XD9x
+  14266 @8|$ht
+  14287 @8|$ht
+  142a2 @8|$ht
+  1439e A_A^A]A\_^]
+  143fa u"8Z(t
+  14d91 UVWATAUAVAWH
+  14e79 L$&8\$&t,8Y
+  15038 @A_A^A]A\_^]
+  15252 fD94Fu
+  153bf WATAUAVAWH
+  1557b  A_A^A]A\_
+  159b5 fD9t$b
+  15dd2 \$ VWATAUAVH
+  15de6 D!l$xA
+  15e64 @A^A]A\_^
+  16137 L$ VWAVH
+  16571 @8l$Ht
+  16dcc @UATAUAVAWH
+  16f4d e0A_A^A]A\]
+  16f60 ATAUAVH
+  16ff2 L$ fff
+  1725c L$ |+L;
+  172f6 A^A]A\
+  178e4 @UATAUAVAWH
+  17b5d H!T$0D
+  17b70 ue!T$(H!T$ 
+  17bcd A_A^A]A\]
+  17d7f WAVAWH
+  17e18  A_A^_
+  18269 UVWATAUAVAWH
+  18357 D8\0>t
+  186f2 L$@D8]
+  18732 A_A^A]A\_^]
+  1897a VWATAVAW
+  18ad7 A_A^A\_^
+  18aee WATAUAVAWH
+  18bc0  A_A^A]A\_
+  18bce \$ UVWATAUAVAWH
+  18def H!D$ H
+  18ea2 `A_A^A]A\_^]
+  19096 WATAUAVAWH
+  191a1  A_A^A]A\_
+  1943d UVWAVAWH
+  19604 @A_A^_^]
+  19792 ffffff
+  19b51 fffffff
+  1a007 USVWAVH
+  1a124 A^_^[]
+  1b730 EngineAdapterSetAccountPolicy
+  1b750 EngineAdapterCreateKey
+  1b768 EngineAdapterIdentifyFeatureSetSecure
+  1b790 EngineAdapterAcceptPrivateSensorTypeInfo
+  1b7c0 EngineAdapterCreateEnrollmentAuthenticated
+  1b7f0 EngineAdapterIdentifyFeatureSetAuthenticated
+  1b830 EngineAdapterAttach
+  1b848 EngineAdapterDetach
+  1b860 EngineAdapterClearContext
+  1b880 EngineAdapterQueryPreferredFormat
+  1b8a8 EngineAdapterQueryIndexVectorSize
+  1b8d0 EngineAdapterQueryHashAlgorithms
+  1b8f8 EngineAdapterSetHashAlgorithm
+  1b918 EngineAdapterQuerySampleHint
+  1b938 EngineAdapterAcceptSampleData
+  1b958 EngineAdapterExportEngineData
+  1b978 EngineAdapterVerifyFeatureSet
+  1b998 EngineAdapterIdentifyFeatureSet
+  1b9b8 EngineAdapterCreateEnrollment
+  1b9d8 EngineAdapterUpdateEnrollment
+  1b9f8 EngineAdapterGetEnrollmentStatus
+  1ba20 EngineAdapterGetEnrollmentHash
+  1ba40 EngineAdapterCheckForDuplicate
+  1ba60 EngineAdapterCommitEnrollment
+  1ba80 EngineAdapterDiscardEnrollment
+  1baa0 EngineAdapterControlUnitPrivileged
+  1bac8 EngineAdapterQueryExtendedInfo
+  1bae8 EngineAdapterSetEnrollmentParameters
+  1bb10 EngineAdapterQueryExtendedEnrollmentStatus
+  1bb40 EngineAdapterPipelineInit
+  1bb60 EngineAdapterSelectCalibrationFormat
+  1bb88 EngineAdapterQueryCalibrationData
+  1bbd0 RtlGetVersion
+  1bbe0 WbioQueryEngineInterface
+  1bc20 SensorAdapterAttach
+  1bc38 SensorAdapterDetach
+  1bc50 SensorAdapterCancel
+  1bc68 SensorAdapterQueryStatus
+  1bc88 SensorAdapterReset
+  1bca0 SensorAdapterSetMode
+  1bcb8 SensorAdapterSetIndicatorStatus
+  1bcd8 SensorAdapterGetIndicatorStatus
+  1bcf8 SensorAdapterStartCapture
+  1bd18 SensorAdapterFinishCapture
+  1bd38 SensorAdapterExportSensorData
+  1bd58 SensorAdapterClearContext
+  1bd78 SensorAdapterPushDataToEngine
+  1bd98 SensorAdapterControlUnit
+  1bdb8 SensorAdapterNotifyPowerChange
+  1bdd8 SensorAdapterPipelineInit
+  1bdf8 SensorAdapterPipelineCleanup
+  1be18 SensorAdapterActivate
+  1be30 SensorAdapterDeactivate
+  1be48 SensorAdapterQueryExtendedInfo
+  1be68 SensorAdapterQueryCalibrationFormats
+  1be90 SensorAdapterSetCalibrationFormat
+  1beb8 SensorAdapterAcceptCalibrationData
+  1bee0 SensorAdapterAsyncImportRawBuffer
+  1bf08 SensorAdapterAsyncImportSecureBuffer
+  1bf30 SensorAdapterQueryPrivateSensorType
+  1bf58 SensorAdapterConnectSecure
+  1bf78 SensorAdapterStartCaptureEx
+  1bf98 SensorAdapterStartNotifyWake
+  1bfb8 SensorAdapterFinishNotifyWake
+  1bfd8 _SensorAdapterResetOwnership
+  1bff8 DllMain
+  1c000 WbioQuerySensorInterface
+  1c020 StorageAdapterAttach
+  1c038 StorageAdapterDetach
+  1c050 StorageAdapterClearContext
+  1c070 StorageAdapterCreateDatabase
+  1c090 StorageAdapterEraseDatabase
+  1c0b0 StorageAdapterOpenDatabase
+  1c0d0 StorageAdapterCloseDatabase
+  1c0f0 StorageAdapterGetDataFormat
+  1c110 StorageAdapterGetDatabaseSize
+  1c130 StorageAdapterAddRecord
+  1c148 StorageAdapterDeleteRecord
+  1c168 StorageAdapterQueryBySubject
+  1c188 StorageAdapterQueryByContent
+  1c1a8 StorageAdapterGetRecordCount
+  1c1c8 StorageAdapterFirstRecord
+  1c1e8 StorageAdapterNextRecord
+  1c208 StorageAdapterGetCurrentRecord
+  1c228 StorageAdapterControlUnitPrivileged
+  1c250 StorageAdapterNotifyPowerChange
+  1c270 StorageAdapterPipelineInit
+  1c290 StorageAdapterPipelineCleanup
+  1c2b0 StorageAdapterDeactivate
+  1c2d0 StorageAdapterActivate
+  1c2e8 StorageAdapterQueryExtendedInfo
+  1c308 StorageAdapterNotifyDatabaseChange
+  1c330 StorageAdapteUpdateRecordBegin
+  1c350 StorageAdapteUpdateRecordCommit
+  1c390 WbioQueryStorageInterface
+  1c3b0 _StorageQueryData
+  1c3c8 _StorageAdapterSetCommonData
+  1c3e8 _StorageAdapterGetCommonData
+  1c518 Unknown exception
+  1c548 bad exception
+  1cc60 __based(
+  1cc70 __cdecl
+  1cc78 __pascal
+  1cc88 __stdcall
+  1cc98 __thiscall
+  1cca8 __fastcall
+  1ccb8 __vectorcall
+  1ccc8 __clrcall
+  1ccd4 __eabi
+  1cce0 __swift_1
+  1ccf0 __swift_2
+  1cd00 __ptr64
+  1cd08 __restrict
+  1cd18 __unaligned
+  1cd28 restrict(
+  1cd40  delete
+  1cd68 operator
+  1cdf0 `vftable'
+  1ce00 `vbtable'
+  1ce10 `vcall'
+  1ce18 `typeof'
+  1ce28 `local static guard'
+  1ce40 `string'
+  1ce50 `vbase destructor'
+  1ce68 `vector deleting destructor'
+  1ce88 `default constructor closure'
+  1cea8 `scalar deleting destructor'
+  1cec8 `vector constructor iterator'
+  1cee8 `vector destructor iterator'
+  1cf08 `vector vbase constructor iterator'
+  1cf30 `virtual displacement map'
+  1cf50 `eh vector constructor iterator'
+  1cf78 `eh vector destructor iterator'
+  1cf98 `eh vector vbase constructor iterator'
+  1cfc0 `copy constructor closure'
+  1cfe0 `udt returning'
+  1d000 `local vftable'
+  1d010 `local vftable constructor closure'
+  1d034  new[]
+  1d040  delete[]
+  1d050 `omni callsig'
+  1d060 `placement delete closure'
+  1d080 `placement delete[] closure'
+  1d0a0 `managed vector constructor iterator'
+  1d0c8 `managed vector destructor iterator'
+  1d0f0 `eh vector copy constructor iterator'
+  1d118 `eh vector vbase copy constructor iterator'
+  1d148 `dynamic initializer for '
+  1d168 `dynamic atexit destructor for '
+  1d190 `vector copy constructor iterator'
+  1d1b8 `vector vbase copy constructor iterator'
+  1d1e8 `managed vector copy constructor iterator'
+  1d218 `local static thread guard'
+  1d238 operator "" 
+  1d248 operator co_await
+  1d260 operator<=>
+  1d270  Type Descriptor'
+  1d288  Base Class Descriptor at (
+  1d2a8  Base Class Array'
+  1d2c0  Class Hierarchy Descriptor'
+  1d2e0  Complete Object Locator'
+  1d300 `anonymous namespace'
+  1d580 CorExitProcess
+  1d96c Sunday
+  1d974 Monday
+  1d980 Tuesday
+  1d988 Wednesday
+  1d998 Thursday
+  1d9a4 Friday
+  1d9b0 Saturday
+  1d9f0 January
+  1d9f8 February
+  1da24 August
+  1da30 September
+  1da40 October
+  1da48 November
+  1da58 December
+  1da70 MM/dd/yy
+  1da80 dddd, MMMM dd, yyyy
+  1da98 HH:mm:ss
+  1e320 AreFileApisANSI
+  1e338 FlsAlloc
+  1e350 FlsFree
+  1e360 FlsGetValue
+  1e378 FlsSetValue
+  1e390 InitializeCriticalSectionEx
+  1e3b8 LCMapStringEx
+  1e3d0 LocaleNameToLCID
+  1e3e8 AppPolicyGetProcessTerminationMethod
+  1e7b0  !"#$%&'()*+,-./0123456789:;<=>?@abcdefghijklmnopqrstuvwxyz[\]^_`abcdefghijklmnopqrstuvwxyz{|}~
+  1e930  !"#$%&'()*+,-./0123456789:;<=>?@ABCDEFGHIJKLMNOPQRSTUVWXYZ[\]^_`ABCDEFGHIJKLMNOPQRSTUVWXYZ{|}~
+  21e50 UUUUUU
+  21e80 UUUUUU
+  2279f =imb;D
+  2290a 1<.	/>:
+  2294e />58d%
+  22997 >jtm}S
+  229ee )>6{1n
+  229fa r	Vr.>T
+  22a0c +f)>0'
+  22a8c ;H9>&X
+  22ab2 *StO9>T
+  22afc n03>Pu
+  22bd2 K~Je#>!
+  22cab bp(=>?g
+  22d6c BC?>6t9^	c:>
+  22dd5 K&>.yC
+  22dec .xJ>Hf
+  22df3 y\PD>!
+  22e02 |b=})>
+  22e13 c [1>H'
+  22e52 uzKs@>
+  22e6e 3>N;kU
+  22e9c 	kE>fvw
+  22ee4 V6E>`"(5
+  2338f ?UUUUUU
+  23777 ?7zQ6$
+  23acc RSDSyg
+  23ae4 D:\Jenkins\workspace\HPCNB-111_Pipeline_22H2\HDRFP-8405\sw\niseWrappers\wbf\adapters\synaFpAdapter\x64\Release\OutDirUwp\synaFpAdapter111.pdb
+  23b94 .text$mn
+  23ba8 .text$mn$00
+  23bbc .text$x
+  23bcc .idata$5
+  23be0 .00cfg
+  23bf0 .CRT$XCA
+  23c04 .CRT$XCZ
+  23c18 .CRT$XIA
+  23c2c .CRT$XIC
+  23c40 .CRT$XIZ
+  23c54 .CRT$XPA
+  23c68 .CRT$XPX
+  23c7c .CRT$XPXA
+  23c90 .CRT$XPZ
+  23ca4 .CRT$XTA
+  23cb8 .CRT$XTZ
+  23ccc .gehcont
+  23ce0 .gfids
+  23cf0 .rdata
+  23d00 .rdata$r
+  23d14 .rdata$zzzdbg
+  23d2c .rtc$IAA
+  23d40 .rtc$IZZ
+  23d54 .rtc$TAA
+  23d68 .rtc$TZZ
+  23d7c .xdata
+  23d8c .xdata$x
+  23da0 .edata
+  23db0 .idata$2
+  23dc4 .idata$3
+  23dd8 .idata$4
+  23dec .idata$6
+  23e10 .data$r
+  23e30 .pdata
+  23e40 _RDATA
+  23e50 .rsrc$01
+  23e64 .rsrc$02
+  25996 synaFpAdapter.dll
+  259a8 WbioQueryEngineInterface
+  259c1 WbioQuerySensorInterface
+  259da WbioQueryStorageInterface
+  25d32 GetModuleFileNameW
+  25d48 TraceMessage
+  25d58 GetLastError
+  25d68 SetLastError
+  25d78 DeviceIoControl
+  25d8a GetOverlappedResult
+  25da0 CryptAcquireContextW
+  25db8 CryptReleaseContext
+  25dce CryptGetHashParam
+  25de2 CryptCreateHash
+  25df4 CryptHashData
+  25e04 CryptDestroyHash
+  25e18 VerSetConditionMask
+  25e2e CloseHandle
+  25e3c HeapFree
+  25e48 GetProcessHeap
+  25e5a CreateEventW
+  25e6a GetModuleHandleW
+  25e7e GetProcAddress
+  25e90 VerifyVersionInfoW
+  25ea6 HeapAlloc
+  25eb2 CancelIoEx
+  25ec8 DisableThreadLibraryCalls
+  25ee4 RegisterTraceGuidsW
+  25efa UnregisterTraceGuids
+  25f12 GetTraceLoggerHandle
+  25f2a GetTraceEnableLevel
+  25f40 GetTraceEnableFlags
+  25f54 KERNEL32.dll
+  25f62 ADVAPI32.dll
+  25f72 __C_specific_handler
+  25f8a RtlCaptureContext
+  25f9e RtlLookupFunctionEntry
+  25fb8 RtlVirtualUnwind
+  25fcc UnhandledExceptionFilter
+  25fe8 SetUnhandledExceptionFilter
+  26006 GetCurrentProcess
+  2601a TerminateProcess
+  2602e IsProcessorFeaturePresent
+  2604a QueryPerformanceCounter
+  26064 GetCurrentProcessId
+  2607a GetCurrentThreadId
+  26090 GetSystemTimeAsFileTime
+  260aa InitializeSListHead
+  260c0 IsDebuggerPresent
+  260d4 GetStartupInfoW
+  260e6 RtlUnwindEx
+  260f4 InterlockedFlushSList
+  2610c FlsAlloc
+  26118 FlsGetValue
+  26126 FlsSetValue
+  26134 FlsFree
+  2613e EncodePointer
+  2614e RaiseException
+  26160 EnterCriticalSection
+  26178 LeaveCriticalSection
+  26190 InitializeCriticalSectionEx
+  261ae DeleteCriticalSection
+  261c6 RtlPcToFileHeader
+  261da ExitProcess
+  261e8 FreeLibrary
+  261f6 GetModuleHandleExW
+  2620c FindClose
+  26218 FindFirstFileExW
+  2622c FindNextFileW
+  2623c IsValidCodePage
+  2624e GetACP
+  26258 GetOEMCP
+  26264 GetCPInfo
+  26270 GetCommandLineA
+  26282 GetCommandLineW
+  26294 MultiByteToWideChar
+  262aa WideCharToMultiByte
+  262c0 GetEnvironmentStringsW
+  262da FreeEnvironmentStringsW
+  262f4 InitializeCriticalSectionAndSpinCount
+  2631c TlsAlloc
+  26328 TlsGetValue
+  26336 TlsSetValue
+  26344 TlsFree
+  2634e LoadLibraryExW
+  26360 LCMapStringW
+  26370 GetStdHandle
+  26380 GetFileType
+  2638e GetStringTypeW
+  263a0 HeapSize
+  263ac HeapReAlloc
+  263ba SetStdHandle
+  263ca FlushFileBuffers
+  263de WriteFile
+  263ea GetConsoleOutputCP
+  26400 GetConsoleMode
+  26412 SetFilePointerEx
+  26426 CreateFileW
+  26434 WriteConsoleW
+  26608 1.3.14.3.2.26
+  26c0a                           
+  26cea abcdefghijklmnopqrstuvwxyz
+  26d0a ABCDEFGHIJKLMNOPQRSTUVWXYZ
+  26e22                           
+  26f11 abcdefghijklmnopqrstuvwxyz
+  26f31 ABCDEFGHIJKLMNOPQRSTUVWXYZ
+  273b0 .?AVtype_info@@
+  273d0 .?AVbad_exception@std@@
+  273f8 .?AVexception@std@@
+  29518 <?xml version='1.0' encoding='UTF-8' standalone='yes'?>
+  29551 <assembly xmlns='urn:schemas-microsoft-com:asm.v1' manifestVersion='1.0'>
+  2959c   <trustInfo xmlns="urn:schemas-microsoft-com:asm.v3">
+  295d4     <security>
+  295e4       <requestedPrivileges>
+  29601         <requestedExecutionLevel level='asInvoker' uiAccess='false' />
+  29649       </requestedPrivileges>
+  29667     </security>
+  29678   </trustInfo>
+  29688 </assembly>
+  2a0dd DigiCert Inc1
+  2a0f4 www.digicert.com1!0
+  2a10f DigiCert Trusted Root G40
+  2a12b 210429000000Z
+  2a13a 360428235959Z0i1
+  2a161 DigiCert, Inc.1A0?
+  2a179 8DigiCert Trusted G4 Code Signing RSA4096 SHA384 2021 CA10
+  2a36a [K]taM?
+  2a3bf SA|X=G
+  2a477 http://ocsp.digicert.com0A
+  2a49c 5http://cacerts.digicert.com/DigiCertTrustedRootG4.crt0C
+  2a4e4 2http://crl3.digicert.com/DigiCertTrustedRootG4.crl0
+  2a6fb jj@0HK4
+  2a791 DigiCert, Inc.1A0?
+  2a7a9 8DigiCert Trusted G4 Code Signing RSA4096 SHA384 2021 CA10
+  2a7e6 220426000000Z
+  2a7f5 250425235959Z0
+  2a82d Delaware1
+  2a840 Private Organization1
+  2a85f 33484071
+  2a87e California1
+  2a893 San Jose1
+  2a8a6 Synaptics Incorporated1
+  2a8c7 Synaptics Incorporated0
+  2a9f8 O{'a|7
+  2aa2c ww*C>c;~
+  2ab68 US-DELAWARE-33484070
+  2abb5 Mhttp://crl3.digicert.com/DigiCertTrustedG4CodeSigningRSA4096SHA3842021CA1.crl0S
+  2ac0a Mhttp://crl4.digicert.com/DigiCertTrustedG4CodeSigningRSA4096SHA3842021CA1.crl0=
+  2ac7c http://www.digicert.com/CPS0
+  2acb8 http://ocsp.digicert.com0\
+  2acdd Phttp://cacerts.digicert.com/DigiCertTrustedG4CodeSigningRSA4096SHA3842021CA1.crt0
+  2ae71 /c[s[VG;
+  2af77 DigiCert, Inc.1A0?
+  2af8f 8DigiCert Trusted G4 Code Signing RSA4096 SHA384 2021 CA1
+  2b164 =29'aM
+  2b20b XH|W.@
+  2b327 20220705235147Z
+  2b382 DigiCert, Inc.1;09
+  2b39a 2DigiCert Trusted G4 RSA4096 SHA256 TimeStamping CA0
+  2b3d1 220329000000Z
+  2b3e0 330314235959Z0L1
+  2b407 DigiCert, Inc.1$0"
+  2b420 DigiCert Timestamp 2022 - 20
+  2b4d4 AjEB#AZ
+  2b713 Ihttp://crl3.digicert.com/DigiCertTrustedG4RSA4096SHA256TimeStampingCA.crl0
+  2b77e http://ocsp.digicert.com0X
+  2b7a3 Lhttp://cacerts.digicert.com/DigiCertTrustedG4RSA4096SHA256TimeStampingCA.crt0
+  2b909 2xJK7*L
+  2ba1e (f*^[0
+  2ba4c DigiCert Inc1
+  2ba63 www.digicert.com1!0
+  2ba7e DigiCert Trusted Root G40
+  2ba9a 220323000000Z
+  2baa9 370322235959Z0c1
+  2bad0 DigiCert, Inc.1;09
+  2bae8 2DigiCert Trusted G4 RSA4096 SHA256 TimeStamping CA0
+  2bde0 http://ocsp.digicert.com0A
+  2be05 5http://cacerts.digicert.com/DigiCertTrustedRootG4.crt0C
+  2be4d 2http://crl3.digicert.com/DigiCertTrustedRootG4.crl0 
+  2c0fe DigiCert Inc1
+  2c115 www.digicert.com1$0"
+  2c130 DigiCert Assured ID Root CA0
+  2c14f 220609000000Z
+  2c15e 311109235959Z0b1
+  2c185 DigiCert Inc1
+  2c19c www.digicert.com1!0
+  2c1b7 DigiCert Trusted Root G40
+  2c1f8 ]J<0"0i3
+  2c31a v=Y]Bv
+  2c491 http://ocsp.digicert.com0C
+  2c4b6 7http://cacerts.digicert.com/DigiCertAssuredIDRootCA.crt0E
+  2c500 4http://crl3.digicert.com/DigiCertAssuredIDRootCA.crl0 
+  2c666 '7D`D1
+  2c692 DigiCert, Inc.1;09
+  2c6aa 2DigiCert Trusted G4 RSA4096 SHA256 TimeStamping CA
+  2c72e 220705235147Z0+
+  2c7a7 /1(0&0$0"
+  2c8fa L*yE~/
+  2cad2 Washington1
+  2cae7 Redmond1
+  2caf9 Microsoft Corporation1806
+  2cb18 /Microsoft Windows Third Party Component CA 20120
+  2cb4c 220310195805Z
+  2cb5b 230308195805Z0
+  2cb83 Washington1
+  2cb98 Redmond1
+  2cbaa Microsoft Corporation1;09
+  2cbc9 2Microsoft Windows Hardware Compatibility Publisher0
+  2cc38 |)MuT9
+  2cd82 E0C1)0'
+  2cd8f  Microsoft Operations Puerto Rico1
+  2cdbb 232825+4695800
+  2cdfb chttp://www.microsoft.com/pkiops/crl/Microsoft%20Windows%20Third%20Party%20Component%20CA%202012.crl0
+  2ce7d ehttp://www.microsoft.com/pkiops/certs/Microsoft%20Windows%20Third%20Party%20Component%20CA%202012.crt0
+  2d048 Washington1
+  2d05d Redmond1
+  2d06f Microsoft Corporation1200
+  2d08e )Microsoft Root Certificate Authority 20100
+  2d0bc 120418234838Z
+  2d0cb 270418235838Z0
+  2d0f3 Washington1
+  2d108 Redmond1
+  2d11a Microsoft Corporation1806
+  2d139 /Microsoft Windows Third Party Component CA 20120
+  2d1f7 -g<'<V
+  2d25c }PH.=C
+  2d334 Ehttp://crl.microsoft.com/pki/crl/products/MicRooCerAut_2010-06-23.crl0Z
+  2d397 >http://www.microsoft.com/pki/certs/MicRooCerAut_2010-06-23.crt0
+  2d47f p%|Yi1$
+  2d613 Washington1
+  2d628 Redmond1
+  2d63a Microsoft Corporation1806
+  2d659 /Microsoft Windows Third Party Component CA 2012
+  2d784 (https://www.microsoft.com/en-us/windows 0
+  2d96c 20220708135646.676Z0
+  2d9a6 Washington1
+  2d9bb Redmond1
+  2d9cd Microsoft Corporation1)0'
+  2d9ec  Microsoft Operations Puerto Rico1&0$
+  2da18 Thales TSS ESN:897A-E356-17011%0#
+  2da40 Microsoft Time-Stamp Service
+  2daab Washington1
+  2dac0 Redmond1
+  2dad2 Microsoft Corporation1&0$
+  2daf2 Microsoft Time-Stamp PCA 20100
+  2db13 220302185128Z
+  2db22 230511185128Z0
+  2db4a Washington1
+  2db5f Redmond1
+  2db71 Microsoft Corporation1)0'
+  2db90  Microsoft Operations Puerto Rico1&0$
+  2dbbc Thales TSS ESN:897A-E356-17011%0#
+  2dbe4 Microsoft Time-Stamp Service0
+  2ddac U6^_nmH
+  2de0b V3]2<n`V
+  2de80 Nhttp://www.microsoft.com/pkiops/crl/Microsoft%20Time-Stamp%20PCA%202010(1).crl0l
+  2deec Phttp://www.microsoft.com/pkiops/certs/Microsoft%20Time-Stamp%20PCA%202010(1).crt0
+  2e1c0 Washington1
+  2e1d5 Redmond1
+  2e1e7 Microsoft Corporation1200
+  2e206 )Microsoft Root Certificate Authority 20100
+  2e234 210930182225Z
+  2e243 300930183225Z0|1
+  2e26a Washington1
+  2e27f Redmond1
+  2e291 Microsoft Corporation1&0$
+  2e2b1 Microsoft Time-Stamp PCA 20100
+  2e57e 3http://www.microsoft.com/pkiops/Docs/Repository.htm0
+  2e633 Ehttp://crl.microsoft.com/pki/crl/products/MicRooCerAut_2010-06-23.crl0Z
+  2e696 >http://www.microsoft.com/pki/certs/MicRooCerAut_2010-06-23.crt0
+  2e7b2 as.,k{n?,	x
+  2e918 Washington1
+  2e92d Redmond1
+  2e93f Microsoft Corporation1)0'
+  2e95e  Microsoft Operations Puerto Rico1&0$
+  2e98a Thales TSS ESN:897A-E356-17011%0#
+  2e9b2 Microsoft Time-Stamp Service
+  2ea15 Washington1
+  2ea2a Redmond1
+  2ea3c Microsoft Corporation1&0$
+  2ea5c Microsoft Time-Stamp PCA 20100
+  2ea93 20220708101119Z
+  2eaa4 20220709101119Z0t0:
+  2eb4d x$\K]U
+  2ebe4 Washington1
+  2ebf9 Redmond1
+  2ec0b Microsoft Corporation1&0$
+  2ec2b Microsoft Time-Stamp PCA 2010
+  2ed1d Washington1
+  2ed32 Redmond1
+  2ed44 Microsoft Corporation1&0$
+  2ed64 Microsoft Time-Stamp PCA 2010

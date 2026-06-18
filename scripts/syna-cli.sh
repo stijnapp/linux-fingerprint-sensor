@@ -5,7 +5,10 @@ SCRIPT_DIR="$(cd "$(dirname "$0")" && pwd)"
 REPO="$(cd "$SCRIPT_DIR/.." && pwd)"
 CLI="$REPO/work/synaTudor/build/cli/tudor_cli"
 STORE="${SUDO_USER:+/home/$SUDO_USER}/.tudor-store"; STORE="${STORE:-$HOME/.tudor-store}"
-LOG=/tmp/syna-cli.log
+# Timestamped per-run log so an enroll trace isn't clobbered by the next (identify) run.
+# A stable symlink points at the most recent run for convenience.
+LOG=/tmp/syna-cli-$(date +%Y%m%d-%H%M%S).log
+ln -sf "$LOG" /tmp/syna-cli-latest.log
 
 # USB transfer timeout (ms). The clamp was only needed for the old open-time hang,
 # which is fixed now that open() completes. Leaving it ON truncates the match-in-sensor
@@ -13,6 +16,13 @@ LOG=/tmp/syna-cli.log
 # waits, correct for capture which legitimately waits for a finger). Pass an arg to
 # re-enable a clamp, e.g. `sudo bash scripts/syna-cli.sh 30000`.
 if [ -n "$1" ]; then export SYNA_USB_TIMEOUT="$1"; fi
+
+# [EXPERIMENT U32] Storage backend. Unset=host storage.c (default, known-good enroll).
+# 1=route enroll/identify through the closed adapter's NATIVE WBF storage interface
+#   (drives the sensor DB2 child-link write our host stub never issued) + OpenDatabase.
+# 2=same but CreateDatabase first, then OpenDatabase.
+# Pass through to the CLI (works whether it was inherited or set inline before sudo).
+export SYNA_NATIVE_STORAGE="${SYNA_NATIVE_STORAGE:-}"
 
 # Wake the sensor + free it from fprintd before we grab it.
 for d in /sys/bus/usb/devices/*; do
@@ -26,6 +36,11 @@ systemctl stop fprintd 2>/dev/null
 echo "############################################################"
 echo "# tudor_cli + HP v11.1 driver, sensor 06cb:00ff"
 echo "# Store: $STORE   Log: $LOG"
+if [ -n "$SYNA_NATIVE_STORAGE" ] && [ "$SYNA_NATIVE_STORAGE" != "0" ]; then
+    echo "# Storage backend: NATIVE (U32 mode=$SYNA_NATIVE_STORAGE)"
+else
+    echo "# Storage backend: host storage.c"
+fi
 echo "# FIRST type 'y' <Enter> to accept the warning; the menu appears only after open() succeeds."
 echo "# Menu (after y): e=enroll  v=verify  i=identify  q=query  w=wipe  s=shutdown"
 echo "# Secure sensors may need 2-3 runs to (re-)pair on first ownership change."

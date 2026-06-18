@@ -1,0 +1,712 @@
+diff --git a/libtudor/src/tudor/device.c b/libtudor/src/tudor/device.c
+index 48f4352..396fb50 100644
+--- a/libtudor/src/tudor/device.c
++++ b/libtudor/src/tudor/device.c
+@@ -1,6 +1,75 @@
+ #include <unistd.h>
++#include <stdlib.h>
+ #include "internal.h"
+ 
++//[EXPERIMENT U32] Storage backend selector, from SYNA_NATIVE_STORAGE:
++//  0 / unset -> host-only storage.c (default, known-good enroll path)
++//  1         -> closed adapter's native WBF storage interface + OpenDatabase
++//  2         -> native interface + CreateDatabase then OpenDatabase
++//For the secure 06cb:00ff match-in-sensor part, only the native storage adapter issues
++//the DeviceIoControl that links an enrolled template into sensor DB2 (the type-3 child
++//under the common-prop user). Host storage.c only updates a RAM list -> orphan template.
++static int u32_storage_mode(void) {
++    const char *e = getenv("SYNA_NATIVE_STORAGE");
++    if(!e || !*e) return 0;
++    return atoi(e);
++}
++
++//Print a hex dump, collapsing runs of >=16 identical bytes into "XX*N" so that
++//large mostly-zero IOCTL buffers don't spam the log. Losslessly reconstructable.
++static void print_hex_compressed(const uint8_t *buf, size_t size) {
++    size_t i = 0;
++    while(i < size) {
++        size_t run = 1;
++        while(i + run < size && buf[i + run] == buf[i]) run++;
++        if(run >= 16) {
++            printf("%02x*%zu ", buf[i], run);
++        } else {
++            for(size_t j = 0; j < run; j++) printf("%02x", buf[i]);
++        }
++        i += run;
++    }
++}
++
++//Human-readable name for the WINBIO HRESULTs we care about during enroll/identify/verify.
++static const char *winbio_hres_name(HRESULT hr) {
++    switch((unsigned) hr) {
++        case 0x00000000: return "SUCCESS";
++        case 0x00090001: return "WINBIO_I_MORE_DATA";
++        case 0x80098001: return "WINBIO_E_UNSUPPORTED_FACTOR";
++        case 0x80098002: return "WINBIO_E_INVALID_UNIT";
++        case 0x80098003: return "WINBIO_E_UNKNOWN_ID";
++        case 0x80098004: return "WINBIO_E_CANCELED";
++        case 0x80098005: return "WINBIO_E_NO_MATCH";
++        case 0x80098006: return "WINBIO_E_CAPTURE_ABORTED";
++        case 0x80098007: return "WINBIO_E_ENROLLMENT_IN_PROGRESS";
++        case 0x80098008: return "WINBIO_E_BAD_CAPTURE";
++        case 0x80098009: return "WINBIO_E_INVALID_CONTROL_CODE";
++        case 0x8009800C: return "WINBIO_E_UNSUPPORTED_DATA_FORMAT";
++        case 0x8009800E: return "WINBIO_E_UNSUPPORTED_PURPOSE";
++        case 0x8009800F: return "WINBIO_E_INVALID_DEVICE_STATE";
++        case 0x80098010: return "WINBIO_E_DEVICE_BUSY";
++        case 0x80098011: return "WINBIO_E_DATABASE_CANT_CREATE";
++        case 0x80098012: return "WINBIO_E_DATABASE_CANT_OPEN";
++        case 0x80098015: return "WINBIO_E_DATABASE_CANT_FIND";
++        case 0x80098016: return "WINBIO_E_DATABASE_ALREADY_EXISTS";
++        case 0x80098018: return "WINBIO_E_DATABASE_FULL";
++        case 0x80098019: return "WINBIO_E_DATABASE_LOCKED";
++        case 0x8009801A: return "WINBIO_E_DATABASE_CORRUPTED";
++        case 0x8009801B: return "WINBIO_E_DATABASE_NO_SUCH_RECORD";
++        case 0x8009801C: return "WINBIO_E_DUPLICATE_ENROLLMENT";
++        case 0x8009801D: return "WINBIO_E_DATABASE_READ_ERROR";
++        case 0x8009801E: return "WINBIO_E_DATABASE_WRITE_ERROR";
++        case 0x8009801F: return "WINBIO_E_DATABASE_NO_RESULTS";
++        case 0x80098020: return "WINBIO_E_DATABASE_NO_MORE_RECORDS";
++        case 0x80098026: return "WINBIO_E_NO_CAPTURE_DATA";
++        case 0x80098027: return "WINBIO_E_INVALID_SENSOR_MODE";
++        case 0x8009802B: return "WINBIO_E_DUPLICATE_TEMPLATE";
++        case 0x8009802C: return "WINBIO_E_INVALID_OPERATION";
++        default: return "?";
++    }
++}
++
+ static void req_cb(struct winwdf_request *req, NTSTATUS status, OVERLAPPED *ovlp) {
+     //Get request info
+     const void *out_buf = NULL;
+@@ -16,7 +85,7 @@ static void req_cb(struct winwdf_request *req, NTSTATUS status, OVERLAPPED *ovlp
+     if(LOG_LEVEL <= LOG_VERBOSE) {
+         cant_fail_ret(pthread_mutex_lock(&LOG_LOCK));
+         printf("[DEVCTRL] <- status 0x%x out (size 0x%lx): ", status, num_transfered);
+-        if(status == STATUS_SUCCESS) for(size_t i = 0; i < num_transfered; i++) printf("%02x", ((uint8_t*) out_buf)[i]);
++        if(status == STATUS_SUCCESS) print_hex_compressed((uint8_t*) out_buf, num_transfered);
+         puts("");
+         cant_fail_ret(pthread_mutex_unlock(&LOG_LOCK));
+     }
+@@ -29,7 +98,7 @@ static NTSTATUS tudor_devctrl(struct tudor_device *device, OVERLAPPED *ovlp, ULO
+     if(LOG_LEVEL <= LOG_VERBOSE) {
+         cant_fail_ret(pthread_mutex_lock(&LOG_LOCK));
+         printf("[DEVCTRL] -> in code 0x%x (size 0x%lx): ", code, in_size);
+-        for(size_t i = 0; i < in_size; i++) printf("%02x", ((uint8_t*) in_buf)[i]);
++        print_hex_compressed((uint8_t*) in_buf, in_size);
+         puts("");
+         cant_fail_ret(pthread_mutex_unlock(&LOG_LOCK));
+     }
+@@ -101,21 +170,65 @@ bool tudor_open(struct tudor_device *device, libusb_device_handle *usb_dev, stru
+     *device->pipeline = (WINBIO_PIPELINE) {0};
+     device->pipeline->EngineInterface = tudor_engine_adapter;
+     device->pipeline->SensorInterface = tudor_sensor_adapter;
+-    device->pipeline->StorageInterface = tudor_storage_adapter;
++
++    //[EXPERIMENT U32] Pick the storage adapter. Default = host-only storage.c. With
++    //SYNA_NATIVE_STORAGE set, route the pipeline through the closed adapter's native WBF
++    //storage interface so the engine's CommitEnrollment->AddRecord writes the sensor-side
++    //DB2 child link (the IOCTL our host stub never issues).
++    int u32_mode = u32_storage_mode();
++    WINBIO_STORAGE_INTERFACE *stg = tudor_storage_adapter;
++    if(u32_mode > 0) {
++        if(tudor_native_storage_adapter) {
++            stg = tudor_native_storage_adapter;
++            log_info("U32 | using NATIVE storage adapter (mode=%d) instead of host storage.c", u32_mode);
++        } else {
++            log_warn("U32 | SYNA_NATIVE_STORAGE=%d set but native storage adapter unavailable; using host storage.c", u32_mode);
++            u32_mode = 0;
++        }
++    }
++    device->pipeline->StorageInterface = stg;
+     device->pipeline->SensorHandle = device->winbio_file = winio_create_file(device, true, NULL, NULL, (winio_devctrl_fnc*) tudor_devctrl, (winio_cancel_fnc*) tudor_cancel, (winio_cleanup_fnc*) tudor_cleanup, NULL);
+     device->pipeline->EngineHandle = INVALID_HANDLE_VALUE;
++    //[EXPERIMENT U32] The native StorageAdapter.Attach asserts StorageHandle==INVALID_HANDLE_VALUE
++    //(pipeline+0x10) and StorageContext==NULL (pipeline+0x40), else it returns
++    //WINBIO_E_INVALID_DEVICE_STATE; it allocates its own context and reaches the device via the
++    //shared adapter global. Host storage.c instead needs StorageContext = device.
+     device->pipeline->StorageHandle = INVALID_HANDLE_VALUE;
+-    device->pipeline->StorageContext = device;
++    device->pipeline->StorageContext = (u32_mode > 0) ? NULL : (void*) device;
+ 
+     log_debug("Attaching interfaces to pipeline...");
+     WINBIO_CALL_PIPELINE(tudor_sensor_adapter->Attach, device->pipeline);
+     WINBIO_CALL_PIPELINE(tudor_engine_adapter->Attach, device->pipeline);
+-    WINBIO_CALL_PIPELINE(tudor_storage_adapter->Attach, device->pipeline);
++    WINBIO_CALL_PIPELINE(stg->Attach, device->pipeline);
+ 
+     log_debug("Initializing pipeline interfaces...");
+     WINBIO_CALL_PIPELINE(tudor_sensor_adapter->PipelineInit, device->pipeline);
+     WINBIO_CALL_PIPELINE(tudor_engine_adapter->PipelineInit, device->pipeline);
+-    WINBIO_CALL_PIPELINE(tudor_storage_adapter->PipelineInit, device->pipeline);
++    WINBIO_CALL_PIPELINE(stg->PipelineInit, device->pipeline);
++
++    //[EXPERIMENT U32] Open (optionally create) the sensor's storage database so the native
++    //adapter can link enrolled templates. Args mirror a sensor-resident DB: zeroed
++    //DatabaseId/Format, no file path / connect string. Non-fatal — if it errors we still
++    //bring the pipeline up so the failure is visible on the [DEVCTRL]/[CRYPTO] wire.
++    if(u32_mode > 0) {
++        //OpenDatabase NULL-checks DatabaseId, FilePath AND ConnectString (all must be non-NULL),
++        //needs StorageContext already set by Attach, then copies the 16-byte DatabaseId into its
++        //context and marks the DB open. FilePath/ConnectString contents are unused here, so any
++        //non-NULL strings suffice; a zeroed DatabaseId is fine (only the pointer is checked).
++        GUID u32_db_id = {0};
++        static const char16_t u32_path[] = { 't','u','d','o','r', 0 };
++        static const char16_t u32_conn[] = { 0 };
++        if(u32_mode >= 2 && stg->CreateDatabase) {
++            HRESULT chr = stg->CreateDatabase(device->pipeline, &u32_db_id, WINBIO_TYPE_FINGERPRINT, &u32_db_id, u32_path, u32_conn, 0, 0);
++            log_info("U32 | native CreateDatabase -> 0x%x (%s)", chr, winbio_hres_name(chr));
++        }
++        if(stg->OpenDatabase) {
++            HRESULT ohr = stg->OpenDatabase(device->pipeline, &u32_db_id, u32_path, u32_conn);
++            log_info("U32 | native OpenDatabase -> 0x%x (%s)", ohr, winbio_hres_name(ohr));
++        } else {
++            log_warn("U32 | native storage adapter has no OpenDatabase slot!");
++        }
++    }
+ 
+     //Reset the sensor
+     log_debug("Resetting sensor...");
+@@ -125,7 +238,7 @@ bool tudor_open(struct tudor_device *device, libusb_device_handle *usb_dev, stru
+     log_debug("Activating pipeline...");
+     WINBIO_CALL_PIPELINE(tudor_sensor_adapter->Activate, device->pipeline);
+     WINBIO_CALL_PIPELINE(tudor_engine_adapter->Activate, device->pipeline);
+-    WINBIO_CALL_PIPELINE(tudor_storage_adapter->Activate, device->pipeline);
++    WINBIO_CALL_PIPELINE(stg->Activate, device->pipeline);
+ 
+     //Check the sensor status
+     log_debug("Checking sensor status...");
+@@ -144,22 +257,29 @@ bool tudor_close(struct tudor_device *device) {
+ 
+     winmodule_set_cur(&tudor_adapter_dll->module);
+ 
++    //[EXPERIMENT U32] Tear down whichever storage adapter the pipeline was opened with.
++    WINBIO_STORAGE_INTERFACE *stg = device->pipeline->StorageInterface;
++    if(stg == tudor_native_storage_adapter && tudor_native_storage_adapter && stg->CloseDatabase) {
++        HRESULT chr = stg->CloseDatabase(device->pipeline);
++        log_info("U32 | native CloseDatabase -> 0x%x", chr);
++    }
++
+     //Deactivate the pipeline
+     log_debug("Deactivating pipeline...");
+     WINBIO_CALL_PIPELINE(tudor_sensor_adapter->Deactivate, device->pipeline);
+     WINBIO_CALL_PIPELINE(tudor_engine_adapter->Deactivate, device->pipeline);
+-    WINBIO_CALL_PIPELINE(tudor_storage_adapter->Deactivate, device->pipeline);
++    WINBIO_CALL_PIPELINE(stg->Deactivate, device->pipeline);
+ 
+     //Uninitialize the pipeline
+     log_debug("Uninitializing pipeline interfaces...");
+     WINBIO_CALL_PIPELINE(tudor_sensor_adapter->PipelineCleanup, device->pipeline);
+     WINBIO_CALL_PIPELINE(tudor_engine_adapter->PipelineCleanup, device->pipeline);
+-    WINBIO_CALL_PIPELINE(tudor_storage_adapter->PipelineCleanup, device->pipeline);
++    WINBIO_CALL_PIPELINE(stg->PipelineCleanup, device->pipeline);
+ 
+     log_debug("Detaching interfaces from pipeline...");
+     WINBIO_CALL_PIPELINE(tudor_sensor_adapter->Detach, device->pipeline);
+     WINBIO_CALL_PIPELINE(tudor_engine_adapter->Detach, device->pipeline);
+-    WINBIO_CALL_PIPELINE(tudor_storage_adapter->Detach, device->pipeline);
++    WINBIO_CALL_PIPELINE(stg->Detach, device->pipeline);
+     free(device->pipeline);
+ 
+     winhandle_destroy(device->winbio_file);
+@@ -199,7 +319,7 @@ bool tudor_enroll_start(struct tudor_device *device, RECGUID guid, enum tudor_fi
+     //Follow https://docs.microsoft.com/en-us/windows/win32/secbiomet/adapter-workflow - WinBioEnrollBegin
+     WINBIO_CALL_PIPELINE(tudor_sensor_adapter->ClearContext, device->pipeline);
+     WINBIO_CALL_PIPELINE(tudor_engine_adapter->ClearContext, device->pipeline);
+-    WINBIO_CALL_PIPELINE(tudor_storage_adapter->ClearContext, device->pipeline);
++    WINBIO_CALL_PIPELINE(device->pipeline->StorageInterface->ClearContext, device->pipeline);
+     WINBIO_CALL_PIPELINE(tudor_engine_adapter->CreateEnrollment, device->pipeline);
+     WINBIO_CALL_PIPELINE(tudor_engine_adapter->SetEnrollmentParameters, device->pipeline, &(WINBIO_EXTENDED_ENROLLMENT_PARAMETERS) {
+         .Size = sizeof(WINBIO_EXTENDED_ENROLLMENT_PARAMETERS),
+@@ -242,6 +362,10 @@ static void enroll_cb(OVERLAPPED *ovlp, NTSTATUS status, tudor_async_res_t res)
+         goto exit;
+     };
+ 
++    log_info("ENROLL | UpdateEnrollment -> 0x%x (%s) reject_detail=0x%x | %s",
++        hres, winbio_hres_name(hres), reject_detail,
++        (hres == WINBIO_I_MORE_DATA) ? "needs more captures" : "enrollment capture stage DONE");
++
+     success = true;
+     done = hres != WINBIO_I_MORE_DATA;
+ 
+@@ -287,23 +411,28 @@ bool tudor_enroll_commit(struct tudor_device *device, bool *is_duplicate) {
+     WINBIO_IDENTITY dupl_ident;
+     UCHAR dupl_finger;
+     WINBIO_CALL_PIPELINE(tudor_engine_adapter->CheckForDuplicate, device->pipeline, &dupl_ident, &dupl_finger, &is_dupl);
++    log_info("ENROLL | CheckForDuplicate -> is_dupl=%d (dupl guid=%08x... finger=%x)", is_dupl, dupl_ident.TemplateGuid.PartA, dupl_finger);
+     if(is_dupl) {
+         *is_duplicate = true;
+         return false;
+     }
+ 
+-    log_debug("Committing enrollment...");
++    log_info("ENROLL | Committing enrollment guid=%08x... finger=%x (watch for a 'storage | AddRecord' line below -> engine should hand us the template blob)",
++        device->enroll_guid.PartA, device->enroll_finger);
+ 
+     //The driver doesn't support enrollment hashes (so we don't call GetEnrollmentHash)
+     if((hres = tudor_engine_adapter->CommitEnrollment(device->pipeline, &(WINBIO_IDENTITY) {
+         .Type = WINBIO_ID_TYPE_GUID,
+         .TemplateGuid = *(GUID*) &device->enroll_guid
+     }, (UCHAR) device->enroll_finger, NULL, 0)) != ERROR_SUCCESS) {
+-        log_error("Error commiting enrollment: 0x%x!", hres);
++        log_error("Error commiting enrollment: 0x%x! (%s)", hres, winbio_hres_name(hres));
+         if(hres == WINBIO_E_DUPLICATE_ENROLLMENT) *is_duplicate = true;
+         return false;
+     }
+ 
++    log_info("ENROLL | CommitEnrollment -> 0x%x (%s) | committed guid=%08x... finger=%x",
++        hres, winbio_hres_name(hres), device->enroll_guid.PartA, device->enroll_finger);
++
+     device->enrolling = false;
+     return true;
+ }
+@@ -358,6 +487,7 @@ static void verify_cb(OVERLAPPED *ovlp, NTSTATUS status, tudor_async_res_t res)
+         .Type = WINBIO_ID_TYPE_GUID,
+         .TemplateGuid = *(GUID*) &res->args.verify.guid
+     }, (UCHAR) res->args.verify.finger, &is_match, &payload_ptr, &payload_size, &hash_ptr, &hash_size, &reject_detail)) != ERROR_SUCCESS) {
++        log_info("VERIFY | VerifyFeatureSet -> 0x%x (%s) reject_detail=0x%x  [non-success path]", hres, winbio_hres_name(hres), reject_detail);
+         if(hres == WINBIO_E_BAD_CAPTURE) retry = true;
+         if(hres == WINBIO_E_NO_MATCH) {
+             success = true;
+@@ -365,10 +495,13 @@ static void verify_cb(OVERLAPPED *ovlp, NTSTATUS status, tudor_async_res_t res)
+             goto exit;
+         }
+ 
+-        log_error("Error verifying sample: 0x%x! [reject detail 0x%x]", hres, reject_detail);
++        log_error("Error verifying sample: 0x%x! (%s) [reject detail 0x%x]", hres, winbio_hres_name(hres), reject_detail);
+         goto exit;
+     };
+ 
++    log_info("VERIFY | VerifyFeatureSet -> SUCCESS is_match=%d payload_size=%lu hash_size=%lu",
++        is_match, (unsigned long) payload_size, (unsigned long) hash_size);
++
+     success = true;
+     matches = is_match;
+ 
+@@ -422,22 +555,39 @@ static void identify_cb(OVERLAPPED *ovlp, NTSTATUS status, tudor_async_res_t res
+         goto exit;
+     };
+ 
++    //EXPERIMENT: IdentifyAll may match against ALL DB2 templates rather than only the
++    //loaded common-prop set that IdentifyFeatureSet (9d) uses. Probe + log, non-fatal.
++    if(tudor_engine_adapter->IdentifyAll) {
++        SIZE_T pres_count = 0;
++        WINBIO_PRESENCE *pres = NULL;
++        HRESULT ar = tudor_engine_adapter->IdentifyAll(res->dev->pipeline, &pres_count, &pres);
++        log_info("IDENTIFY-EXP | IdentifyAll -> 0x%x count=%lu", ar, (unsigned long) pres_count);
++        for(SIZE_T i = 0; pres && i < pres_count; i++) {
++            log_info("IDENTIFY-EXP |   [%lu] status=0x%x subfactor=0x%x idtype=%u guid=%08x...",
++                (unsigned long) i, pres[i].Status, pres[i].SubFactor,
++                pres[i].Identity.Type, pres[i].Identity.TemplateGuid.PartA);
++        }
++    } else log_info("IDENTIFY-EXP | IdentifyAll slot is NULL");
++
+     log_debug("Identifying sample...");
+     WINBIO_IDENTITY identity;
+     UCHAR subfactor;
+     UCHAR *payload_ptr, *hash_ptr;
+     SIZE_T payload_size, hash_size;
+     if((hres = tudor_engine_adapter->IdentifyFeatureSet(res->dev->pipeline, &identity, &subfactor, &payload_ptr, &payload_size, &hash_ptr, &hash_size, &reject_detail)) != ERROR_SUCCESS) {
++        log_info("IDENTIFY | IdentifyFeatureSet -> 0x%x (%s) reject_detail=0x%x  [NO MATCH PATH]", hres, winbio_hres_name(hres), reject_detail);
+         if(hres == WINBIO_E_BAD_CAPTURE) retry = true;
+-        if(hres == WINBIO_E_UNKNOWN_ID) {
++        if(hres == WINBIO_E_UNKNOWN_ID || hres == WINBIO_E_DATABASE_NO_RESULTS) {
+             success = true;
+             found_match = false;
+             goto exit;
+         }
+ 
+-        log_error("Error identifying sample: 0x%x! [reject detail 0x%x]", hres, reject_detail);
++        log_error("Error identifying sample: 0x%x! (%s) [reject detail 0x%x]", hres, winbio_hres_name(hres), reject_detail);
+         goto exit;
+     };
++    log_info("IDENTIFY | IdentifyFeatureSet -> SUCCESS guid=%08x... subfactor=%x payload_size=%lu hash_size=%lu",
++        identity.TemplateGuid.PartA, subfactor, (unsigned long) payload_size, (unsigned long) hash_size);
+     if(identity.Type != WINBIO_ID_TYPE_GUID) {
+         log_error("Invalid identification ID type: %d!", identity.Type);
+         goto exit;
+diff --git a/libtudor/src/tudor/driver.c b/libtudor/src/tudor/driver.c
+index 5b86fb1..469cb40 100644
+--- a/libtudor/src/tudor/driver.c
++++ b/libtudor/src/tudor/driver.c
+@@ -42,6 +42,7 @@ typedef BOOL __winfnc (*api_DllMain)(HANDLE hinstDLL, int fdwReason, void *lpRes
+ struct windrv_dll *tudor_adapter_dll, *tudor_driver_dll;
+ WINBIO_SENSOR_INTERFACE *tudor_sensor_adapter;
+ WINBIO_ENGINE_INTERFACE *tudor_engine_adapter;
++WINBIO_STORAGE_INTERFACE *tudor_native_storage_adapter; //[EXPERIMENT U32]
+ 
+ static DRIVER_OBJECT umdf_driver;
+ struct winwdf_driver *tudor_wdf_driver;
+@@ -135,6 +136,35 @@ bool tudor_init() {
+         return false;
+     }
+ 
++    //[EXPERIMENT U32] Also query the native WBF STORAGE interface. The relink normally
++    //ignores it and substitutes our host-only storage.c; for the secure match-in-sensor
++    //part that means the enrolled template is never linked into sensor DB2. Query it here
++    //(non-fatal) so device.c can optionally route the pipeline through it.
++    tudor_native_storage_adapter = NULL;
++    api_WbioQueryStorageInterface query_storage = (api_WbioQueryStorageInterface) find_dll_export(&tudor_adapter_dll->image, "WbioQueryStorageInterface");
++    if(!query_storage) {
++        log_warn("WbioQueryStorageInterface export not found in adapter DLL! [U32 native storage unavailable]");
++    } else if((hres = query_storage(&tudor_native_storage_adapter)) != 0) {
++        log_warn("Error querying native storage interface: 0x%x! [U32 native storage unavailable]", hres);
++        tudor_native_storage_adapter = NULL;
++    } else {
++        WINBIO_STORAGE_INTERFACE *s = tudor_native_storage_adapter;
++        log_info("U32 | native storage adapter @ %p ver=%u.%u type=%u size=%lu adapterId=%08x-%04x-%04x",
++            (void*) s, s->Version.MajorVersion, s->Version.MinorVersion, s->Type, (unsigned long) s->Size,
++            s->AdapterId.PartA, s->AdapterId.PartB, s->AdapterId.PartC);
++        log_info("U32 | native storage slots: Attach=%p PipelineInit=%p Activate=%p OpenDatabase=%p CreateDatabase=%p AddRecord=%p QueryBySubject=%p CloseDatabase=%p",
++            (void*) s->Attach, (void*) s->PipelineInit, (void*) s->Activate, (void*) s->OpenDatabase,
++            (void*) s->CreateDatabase, (void*) s->AddRecord, (void*) s->QueryBySubject, (void*) s->CloseDatabase);
++    }
++
++    //DIAG: which enroll-targeting / cache slots does this (v11.1) adapter actually populate?
++    log_info("ENGINE SLOTS | SetEnrollmentSelector=%p Reserved_1=%p IdentifyAll=%p RefreshCache=%p QueryExtendedInfo=%p",
++        (void*) tudor_engine_adapter->SetEnrollmentSelector,
++        (void*) tudor_engine_adapter->Reserved_1,
++        (void*) tudor_engine_adapter->IdentifyAll,
++        (void*) tudor_engine_adapter->RefreshCache,
++        (void*) tudor_engine_adapter->QueryExtendedInfo);
++
+     return true;
+ }
+ 
+diff --git a/libtudor/src/tudor/internal.h b/libtudor/src/tudor/internal.h
+index 540366d..8de5a7b 100644
+--- a/libtudor/src/tudor/internal.h
++++ b/libtudor/src/tudor/internal.h
+@@ -60,6 +60,11 @@ extern struct winwdf_driver *tudor_wdf_driver;
+ extern WINBIO_SENSOR_INTERFACE *tudor_sensor_adapter;
+ extern WINBIO_ENGINE_INTERFACE *tudor_engine_adapter;
+ extern WINBIO_STORAGE_INTERFACE *tudor_storage_adapter;
++/* [EXPERIMENT U32] The closed adapter DLL's native WBF storage interface (the 3rd
++ * WbioQuery* export). For the secure 06cb:00ff match-in-sensor part this is the
++ * component that links an enrolled template into sensor DB2 (the type-3 child under
++ * the common-prop user) via DeviceIoControl. NULL if the export was missing. */
++extern WINBIO_STORAGE_INTERFACE *tudor_native_storage_adapter;
+ 
+ bool tudor_reg_handler(void *ctx, void *ctx_obj, const char *key_name, const char *val_name, bool is_write, void *buf, size_t *buf_size, enum winreg_val_type *val_type);
+ 
+diff --git a/libtudor/src/tudor/storage.c b/libtudor/src/tudor/storage.c
+index d1a0827..c89c61c 100644
+--- a/libtudor/src/tudor/storage.c
++++ b/libtudor/src/tudor/storage.c
+@@ -91,7 +91,7 @@ __winfnc static HRESULT storage_AddRecord(WINBIO_PIPELINE *pipeline, WINBIO_STOR
+     if(srec->Identity->Type != WINBIO_ID_TYPE_GUID) return E_INVALIDARG;
+     if(srec->IndexElementCount != 0 || srec->PayloadBlobSize != 0) return E_INVALIDARG;
+ 
+-    log_verbose("WINBIO storage | AddRecord(guid=%08x... subfactor=%x) called", srec->Identity->TemplateGuid.PartA, srec->SubFactor);
++    log_info("WINBIO storage | AddRecord(guid=%08x... subfactor=%x) TemplateBlobSize=%lu PayloadBlobSize=%lu", srec->Identity->TemplateGuid.PartA, srec->SubFactor, (unsigned long) srec->TemplateBlobSize, (unsigned long) srec->PayloadBlobSize);
+     cant_fail_ret(pthread_mutex_lock(&dev->records_lock));
+ 
+     //Check for duplicate record
+@@ -123,15 +123,41 @@ __winfnc static HRESULT storage_AddRecord(WINBIO_PIPELINE *pipeline, WINBIO_STOR
+ 
+     rec->guid = *(RECGUID*) &srec->Identity->TemplateGuid;
+     rec->finger = (enum tudor_finger) srec->SubFactor;
+-    rec->data = malloc(srec->TemplateBlobSize);
+-    rec->data_size = srec->TemplateBlobSize;
+-    if(!rec->data) {
+-        HRESULT hr = winerr_from_errno();
+-        free(rec);
+-        cant_fail_ret(pthread_mutex_unlock(&dev->records_lock));
+-        return hr;
++
++    /* [EXPERIMENT U28] On v11.1 the engine hands us an EMPTY template blob (the
++     * template is sensor-resident, e.g. the orphan type-2 object). The minted
++     * template GUID was captured off the enroll wire in bcrypt.c; stash it as the
++     * host record's blob so the replayed common-prop child (type-3) record carries
++     * a reference to the real type-2 template. */
++    extern uint8_t tudor_exp_enroll_tmpl_guid[16];
++    extern bool tudor_exp_have_enroll_tmpl_guid;
++    if(srec->TemplateBlobSize == 0 && tudor_exp_have_enroll_tmpl_guid) {
++        rec->data_size = 16;
++        rec->data = malloc(16);
++        if(!rec->data) {
++            HRESULT hr = winerr_from_errno();
++            free(rec);
++            cant_fail_ret(pthread_mutex_unlock(&dev->records_lock));
++            return hr;
++        }
++        memcpy(rec->data, tudor_exp_enroll_tmpl_guid, 16);
++        tudor_exp_have_enroll_tmpl_guid = false; /* consume — one per enroll */
++        const unsigned char *d = (const unsigned char*) rec->data;
++        log_info("[EXPERIMENT U28] AddRecord: WBF blob empty; injecting minted template GUID "
++            "%02x%02x%02x%02x%02x%02x%02x%02x%02x%02x%02x%02x%02x%02x%02x%02x as 16-byte host blob",
++            d[0], d[1], d[2], d[3], d[4], d[5], d[6], d[7],
++            d[8], d[9], d[10], d[11], d[12], d[13], d[14], d[15]);
++    } else {
++        rec->data = malloc(srec->TemplateBlobSize);
++        rec->data_size = srec->TemplateBlobSize;
++        if(!rec->data) {
++            HRESULT hr = winerr_from_errno();
++            free(rec);
++            cant_fail_ret(pthread_mutex_unlock(&dev->records_lock));
++            return hr;
++        }
++        memcpy(rec->data, srec->TemplateBlob, rec->data_size);
+     }
+-    memcpy(rec->data, srec->TemplateBlob, rec->data_size);
+ 
+     if(dev->records_head) dev->records_head->prev = rec;
+     dev->records_head = rec;
+@@ -179,7 +205,7 @@ __winfnc static HRESULT storage_QueryBySubject(WINBIO_PIPELINE *pipeline, WINBIO
+     //Validate identity
+     if(ident->Type != WINBIO_ID_TYPE_WILDCARD && ident->Type != WINBIO_ID_TYPE_GUID) return E_INVALIDARG;
+ 
+-    log_verbose("WINBIO storage | QueryBySubject(ID type=%d guid=%08x... subfactor=%x) called", ident->Type, ident->TemplateGuid.PartA, subfactor);
++    log_info("WINBIO storage | QueryBySubject(ID type=%d guid=%08x... subfactor=%x) called", ident->Type, ident->TemplateGuid.PartA, subfactor);
+     cant_fail_ret(pthread_mutex_lock(&dev->records_lock));
+ 
+     //Find the record
+@@ -190,7 +216,7 @@ __winfnc static HRESULT storage_QueryBySubject(WINBIO_PIPELINE *pipeline, WINBIO
+             (ident->Type == WINBIO_ID_TYPE_WILDCARD || memcmp(&rec->identity->TemplateGuid, &ident->TemplateGuid, sizeof(GUID)) == 0) && 
+             (subfactor == WINBIO_SUBTYPE_ANY || rec->finger == subfactor)
+         ) {
+-            log_verbose("WINBIO storage | QueryBySubject | Found record! guid=%08x... finger=%x", rec->identity->TemplateGuid.PartA, rec->finger);
++            log_info("WINBIO storage | QueryBySubject | Found record! guid=%08x... finger=%x data_size=%lu", rec->identity->TemplateGuid.PartA, rec->finger, (unsigned long) rec->data_size);
+ 
+             //Add to result records
+             if(prev_res) prev_res->res_next = rec;
+@@ -209,7 +235,7 @@ __winfnc static HRESULT storage_QueryByContent(WINBIO_PIPELINE *pipeline, UCHAR
+     if(index_vec_sz != 0) return E_INVALIDARG;
+ 
+     //Forward to QueryBySubject
+-    log_verbose("WINBIO storage | QueryByContent(subfactor=%x) called", subfactor);
++    log_info("WINBIO storage | QueryByContent(subfactor=%x) called", subfactor);
+     return storage_QueryBySubject(pipeline, &(WINBIO_IDENTITY) {
+         .Type = WINBIO_ID_TYPE_WILDCARD,
+         .Null = 0
+@@ -226,7 +252,7 @@ __winfnc static HRESULT storage_GetRecordCount(WINBIO_PIPELINE *pipeline, SIZE_T
+     for(struct tudor_record *rec = dev->result_records_head; rec; rec = rec->res_next) (*num_recs)++;
+ 
+     cant_fail_ret(pthread_mutex_unlock(&dev->records_lock));
+-    log_verbose("WINBIO storage | GetRecordCount() called -> %lu records", *num_recs);
++    log_info("WINBIO storage | GetRecordCount() called -> %lu records", *num_recs);
+     return *num_recs ? ERROR_SUCCESS : WINBIO_E_DATABASE_NO_RESULTS;
+ }
+ 
+diff --git a/libtudor/src/winapi/bcrypt/bcrypt.c b/libtudor/src/winapi/bcrypt/bcrypt.c
+index c988fc0..64f36f1 100644
+--- a/libtudor/src/winapi/bcrypt/bcrypt.c
++++ b/libtudor/src/winapi/bcrypt/bcrypt.c
+@@ -304,6 +304,62 @@ __winfnc NTSTATUS BCryptDestroyKey(struct bcrypt_key *key) {
+ }
+ WINAPI(BCryptDestroyKey);
+ 
++/* Plaintext peek of the TLS record payload (= VCSFW command/response frame).
++ * This is the ONLY place the cleartext firmware-command stream is visible:
++ * the closed driver TLS-wraps every command via these BCrypt GCM calls before
++ * handing ciphertext to WdfUsbPipeWrite, so the [DEVCTRL] log (FpAdapter->USB
++ * IOCTL boundary) never sees commands the driver issues internally at
++ * OnPrepareHardware / OnD0Entry (e.g. the DB2 GET_DB_INFO/GET_OBJECT_LIST ->
++ * RetrieveTemplatesFromFlash -> OnSetTemplateList matcher-load chain). */
++/* VCSFW opcode -> name. byte[0] of an outbound (TX) command frame. 9e/9f/a0/a1
++ * confirmed on the wire; a2/a3/a4/a5 inferred from the firmware string order
++ * (WRITE/DELETE_OBJECT, FORMAT, CLEANUP) — treat a3+ as tentative. */
++static const char *vcsfw_op_name(uint8_t op) {
++    switch(op) {
++        case 0x80: return "FRAME_READ?";
++        case 0x81: return "FRAME_FINISH?";
++        case 0x82: return "GET_VERSION";
++        case 0x86: return "CAPTURE_FRAME";
++        case 0x87: return "CAPTURE_GET";
++        case 0x96: return "ENROLL";          /* 9601 create / 9602 update / 9604 commit */
++        case 0x99: return "GET_MATCH_RESULT";
++        case 0x9d: return "IDENTIFY_MATCH";
++        case 0x9e: return "DB2_GET_DB_INFO";
++        case 0x9f: return "DB2_GET_OBJECT_LIST";
++        case 0xa0: return "DB2_GET_OBJECT_INFO";
++        case 0xa1: return "DB2_GET_OBJECT_DATA";
++        case 0xa2: return "DB2_WRITE_OBJECT";
++        case 0xa3: return "DB2_DELETE_OBJECT?";
++        case 0xa4: return "DB2_FORMAT?";
++        case 0xa5: return "DB2_CLEANUP?";
++        default:   return "?";
++    }
++}
++
++/* [EXPERIMENT U28] capture the minted enrollment template GUID from the enroll
++ * response stream. On v11.1 the WBF AddRecord blob is empty (template is sensor-
++ * resident), so the only place the minted template's 16-byte GUID is visible is
++ * here on the cleartext wire. storage_AddRecord stashes it into the host record so
++ * the replayed common-prop child (type-3) record can reference the real type-2
++ * template. Globals are read by libtudor/src/tudor/storage.c. */
++uint8_t tudor_exp_enroll_tmpl_guid[16];
++bool tudor_exp_have_enroll_tmpl_guid = false;
++static uint8_t bc_last_tx_op = 0;
++
++static void bc_plaintext_peek(const char *tag, const char *algo, const uint8_t *buf, size_t size) {
++    if(LOG_LEVEL > LOG_INFO) return;
++    pthread_mutex_lock(&LOG_LOCK);
++    bool is_tx = tag && tag[7] == 'T'; /* "CRYPTO TX" */
++    const char *op = (is_tx && size > 0) ? vcsfw_op_name(buf[0]) : "";
++    printf("[%s] algo=%s size=0x%lx %s%s: ", tag, algo ? algo : "?",
++        (unsigned long) size, op[0] ? "op=" : "", op);
++    size_t n = size < 256 ? size : 256;
++    for(size_t i = 0; i < n; i++) printf("%02x", buf[i]);
++    if(n < size) printf("..(+0x%lx)", (unsigned long)(size - n));
++    printf("\n");
++    pthread_mutex_unlock(&LOG_LOCK);
++}
++
+ __winfnc NTSTATUS BCryptEncrypt(struct bcrypt_key *key, UCHAR *in, ULONG in_size, void *pad_info, UCHAR *iv, ULONG iv_size, UCHAR *out, ULONG out_size, ULONG *res_size, ULONG flags) {
+     if(!key->algo->encrypt) return WINERR_SET_CODE;
+     if(flags) {
+@@ -311,6 +367,9 @@ __winfnc NTSTATUS BCryptEncrypt(struct bcrypt_key *key, UCHAR *in, ULONG in_size
+         return WINERR_SET_CODE;
+     }
+ 
++    bc_plaintext_peek("CRYPTO TX", key->algo->name, in, in_size);
++    if(in_size > 0) bc_last_tx_op = in[0]; /* [EXPERIMENT U28] remember last command opcode */
++
+     size_t sz = out_size;
+     NTSTATUS status = key->algo->encrypt(key->algo, key->key_data, &key->algo_wrap->obj, pad_info, iv, iv_size, in, in_size, out, &sz);
+     if(status == STATUS_SUCCESS) *res_size = (ULONG) sz;
+@@ -327,7 +386,22 @@ __winfnc NTSTATUS BCryptDecrypt(struct bcrypt_key *key, UCHAR *in, ULONG in_size
+ 
+     size_t sz = out_size;
+     NTSTATUS status = key->algo->decrypt(key->algo, key->key_data, &key->algo_wrap->obj, pad_info, iv, iv_size, in, in_size, out, &sz);
+-    if(status == STATUS_SUCCESS) *res_size = (ULONG) sz;
++    if(status == STATUS_SUCCESS) {
++        *res_size = (ULONG) sz;
++        bc_plaintext_peek("CRYPTO RX", key->algo->name, out, sz);
++        /* [EXPERIMENT U28] response to an ENROLL (0x96) command carrying a minted
++         * template object id at offset 2 (status u16 then 16-byte GUID). The 0x9604
++         * commit reply is only 2 bytes, so it's skipped; the last qualifying capture
++         * is the progress=100 update that mints the template. */
++        if(bc_last_tx_op == 0x96 && sz >= 0x12) {
++            bool nonzero = false;
++            for(int i = 0; i < 16; i++) if(out[2 + i]) { nonzero = true; break; }
++            if(nonzero) {
++                memcpy(tudor_exp_enroll_tmpl_guid, out + 2, 16);
++                tudor_exp_have_enroll_tmpl_guid = true;
++            }
++        }
++    }
+     return status;
+ }
+ WINAPI(BCryptDecrypt)
+diff --git a/libtudor/src/winapi/crypt/crypt.c b/libtudor/src/winapi/crypt/crypt.c
+index 8e7ad0d..97caaff 100644
+--- a/libtudor/src/winapi/crypt/crypt.c
++++ b/libtudor/src/winapi/crypt/crypt.c
+@@ -2,10 +2,18 @@
+ #include <openssl/rand.h>
+ #include <openssl/evp.h>
+ #include <string.h>
++#include <stdlib.h>
+ #include "crypt.h"
+ 
+ __winfnc BOOL CryptAcquireContextA(struct crypt_provider **prov, const char *cont_name, const char *prov_name, DWORD prov_type, DWORD flags) {
+     switch(prov_type) {
++        /* PROV_RSA_FULL: the v11.1 driver acquires a 'SYNA' container at enroll commit
++         * to seal/bind the template. Its import tables show it only does hashing /
++         * CryptImportKey / CryptEncrypt/Decrypt / CryptGenRandom with it (NO CryptGenKey),
++         * all of which crypt_prov_rsa_aes already services — so hand back the same provider.
++         * Rejecting it (the old default) left templates unsealed -> identify/verify never
++         * match. */
++        case PROV_RSA_FULL:
+         case PROV_RSA_AES: *prov = &crypt_prov_rsa_aes; return TRUE;
+         default: {
+             log_warn("CryptAcquireContextA | Couldn't find provider for container '%s' provider '%s' provider type 0x%x flags 0x%x", cont_name, prov_name, prov_type, flags);
+@@ -15,6 +23,18 @@ __winfnc BOOL CryptAcquireContextA(struct crypt_provider **prov, const char *con
+ }
+ WINAPI(CryptAcquireContextA)
+ 
++/* v11.1 calls the wide variant during enroll commit (acquiring a crypto context to
++ * seal the template). Container/provider names are normally NULL; just widen->narrow
++ * and delegate to the A impl. */
++__winfnc BOOL CryptAcquireContextW(struct crypt_provider **prov, const char16_t *cont_name, const char16_t *prov_name, DWORD prov_type, DWORD flags) {
++    char *cont = cont_name ? winstr_to_str(cont_name) : NULL;
++    char *provn = prov_name ? winstr_to_str(prov_name) : NULL;
++    BOOL r = CryptAcquireContextA(prov, cont, provn, prov_type, flags);
++    free(cont); free(provn);
++    return r;
++}
++WINAPI(CryptAcquireContextW)
++
+ __winfnc BOOL CryptReleaseContext(struct crypt_provider *prov, DWORD flags) {
+     return TRUE;
+ }
+diff --git a/libtudor/src/winapi/suspend.c b/libtudor/src/winapi/suspend.c
+index 25e20e9..46ca219 100644
+--- a/libtudor/src/winapi/suspend.c
++++ b/libtudor/src/winapi/suspend.c
+@@ -18,4 +18,19 @@ __winfnc DWORD PowerUnregisterSuspendResumeNotification(HANDLE handle) {
+     //TODO
+     return ERROR_SUCCESS;
+ }
+-WINAPI(PowerUnregisterSuspendResumeNotification)
+\ No newline at end of file
++WINAPI(PowerUnregisterSuspendResumeNotification)
++
++/* v11.1 (06cb:00ff) subscribes to power-SETTING change notifications (e.g. console
++ * lock, monitor power) during bring-up. No power events are delivered in the CLI
++ * context, so accept the subscription and hand back a null handle, mirroring the
++ * suspend/resume stub above. */
++__winfnc DWORD PowerSettingRegisterNotification(const GUID *setting_guid, DWORD flags, HANDLE recipient, HANDLE *out) {
++    if(out) *out = NULL;
++    return ERROR_SUCCESS;
++}
++WINAPI(PowerSettingRegisterNotification)
++
++__winfnc DWORD PowerSettingUnregisterNotification(HANDLE handle) {
++    return ERROR_SUCCESS;
++}
++WINAPI(PowerSettingUnregisterNotification)
+\ No newline at end of file
+diff --git a/libtudor/src/winapi/wdf/device.c b/libtudor/src/winapi/wdf/device.c
+index ffd727a..ae27ac2 100644
+--- a/libtudor/src/winapi/wdf/device.c
++++ b/libtudor/src/winapi/wdf/device.c
+@@ -350,6 +350,34 @@ WDFFUNC(WdfDeviceStopIdleActual, 248)
+ __winfnc void WdfDeviceResumeIdleActual(WDF_DRIVER_GLOBALS *globals, WDFOBJECT device_obj) {}
+ WDFFUNC(WdfDeviceResumeIdleActual, 249)
+ 
++/* v11.1 (06cb:00ff) calls these during EvtDeviceAdd to advertise PnP/power caps
++ * (removable, surprise-removal-ok, unique-id, wake, etc). We drive the sensor over
++ * libusb with no real PnP/power stack, so they're safe no-ops. Both are VOID in the
++ * WDF DDI. 34 is pre-added: drivers set PnP+power capabilities as a pair. */
++__winfnc void WdfDeviceSetPnpCapabilities(WDF_DRIVER_GLOBALS *globals, WDFOBJECT device_obj, void *pnp_caps) {}
++WDFFUNC(WdfDeviceSetPnpCapabilities, 33)
++
++__winfnc void WdfDeviceSetPowerCapabilities(WDF_DRIVER_GLOBALS *globals, WDFOBJECT device_obj, void *power_caps) {}
++WDFFUNC(WdfDeviceSetPowerCapabilities, 34)
++
++/* v11.1 writes a metadata property onto its device interface during bring-up. We have
++ * no real device interface (libusb), nothing reads it back, so succeed without storing.
++ * Sig: (Device, PWDF_DEVICE_INTERFACE_PROPERTY_DATA, DEVPROPTYPE, ULONG len, PVOID buf). */
++__winfnc NTSTATUS WdfDeviceAssignInterfaceProperty(WDF_DRIVER_GLOBALS *globals, WDFOBJECT device_obj, void *prop_data, DWORD type, ULONG buf_len, void *prop_buf) { return STATUS_SUCCESS; }
++WDFFUNC(WdfDeviceAssignInterfaceProperty, 50)
++
++/* v11.1 queries an interface property (allocates a WDFMEMORY out-param). We have no
++ * property store, so report "absent" — well-behaved drivers treat this as optional and
++ * skip. Null the out-params defensively. If the driver instead round-trips its OWN
++ * property here and can't tolerate not-found, escalate to a real Assign<->Query store.
++ * Sig: (Device, PropertyData, POOL_TYPE, PWDF_OBJECT_ATTRIBUTES, WDFMEMORY* out, PDEVPROPTYPE out). */
++__winfnc NTSTATUS WdfDeviceAllocAndQueryInterfaceProperty(WDF_DRIVER_GLOBALS *globals, WDFOBJECT device_obj, void *prop_data, int pool_type, WDF_OBJECT_ATTRIBUTES *mem_attrs, WDFOBJECT *out_mem, DWORD *out_type) {
++    if(out_mem) *out_mem = NULL;
++    if(out_type) *out_type = 0;
++    return STATUS_NOT_FOUND;
++}
++WDFFUNC(WdfDeviceAllocAndQueryInterfaceProperty, 51)
++
+ __winfnc NTSTATUS WdfDeviceCreateDeviceInterface(WDF_DRIVER_GLOBALS *globals, WDFOBJECT device_obj, const GUID *interface_guid, const UNICODE_STRING *ref_str) { return STATUS_SUCCESS; }
+ WDFFUNC(WdfDeviceCreateDeviceInterface, 27)
+ 
+diff --git a/libtudor/src/winapi/windows.h b/libtudor/src/winapi/windows.h
+index 46275e9..0ab981f 100644
+--- a/libtudor/src/winapi/windows.h
++++ b/libtudor/src/winapi/windows.h
+@@ -62,7 +62,8 @@ enum {
+     STATUS_PENDING = 0x00000103,
+     STATUS_CANCELLED = 0xc0000120,
+     STATUS_BUFFER_TOO_SMALL = 0xc0000023,
+-    STATUS_INVALID_SIGNATURE = 0xc000a000
++    STATUS_INVALID_SIGNATURE = 0xc000a000,
++    STATUS_NOT_FOUND = 0xc0000225
+ };
+ 
+ typedef struct {
