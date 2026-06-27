@@ -45,12 +45,6 @@ sudo ./scripts/install.sh
 Reinstalling from scratch (e.g. on a fresh OS install) is just **`setup.sh` then
 `install.sh`**, then enroll.
 
-> **Caveat — the Settings panel claims the reader.** While *Settings ▸ Users ▸ Fingerprint
-> Login* is open it holds the device, so the lock screen, `sudo`, and `fprintd-verify`
-> can't use it (the prompt may simply not appear), and scans can fail for a moment after
-> the panel is closed until the next consumer re-acquires the device. Close the panel
-> before testing login.
-
 > **Caveat — resetting templates does not reach the sensor.** Removing fingerprints (in the
 > GUI or with `fprintd-delete`) clears *fprintd's* records, but the sensor keeps its
 > templates in its own flash (DB2) and there is **no verified path that erases that flash
