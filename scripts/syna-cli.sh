@@ -17,10 +17,10 @@ ln -sf "$LOG" /tmp/syna-cli-latest.log
 # re-enable a clamp, e.g. `sudo bash scripts/syna-cli.sh 30000`.
 if [ -n "$1" ]; then export SYNA_USB_TIMEOUT="$1"; fi
 
-# [EXPERIMENT U32] Storage backend. Unset=host storage.c (default, known-good enroll).
-# 1=route enroll/identify through the closed adapter's NATIVE WBF storage interface
-#   (drives the sensor DB2 child-link write our host stub never issued) + OpenDatabase.
-# 2=same but CreateDatabase first, then OpenDatabase.
+# [U32] Storage backend. DEFAULT (unset/1) = closed adapter's NATIVE WBF storage interface,
+# which drives the sensor DB2 child-link write our host stub never issued -> identify MATCHES
+# (UPDATE 34). 0=legacy host storage.c (enroll works but identify can't match). 2=native with
+# CreateDatabase first, then OpenDatabase.
 # Pass through to the CLI (works whether it was inherited or set inline before sudo).
 export SYNA_NATIVE_STORAGE="${SYNA_NATIVE_STORAGE:-}"
 
@@ -36,10 +36,10 @@ systemctl stop fprintd 2>/dev/null
 echo "############################################################"
 echo "# tudor_cli + HP v11.1 driver, sensor 06cb:00ff"
 echo "# Store: $STORE   Log: $LOG"
-if [ -n "$SYNA_NATIVE_STORAGE" ] && [ "$SYNA_NATIVE_STORAGE" != "0" ]; then
-    echo "# Storage backend: NATIVE (U32 mode=$SYNA_NATIVE_STORAGE)"
+if [ "$SYNA_NATIVE_STORAGE" = "0" ]; then
+    echo "# Storage backend: host storage.c (legacy; identify won't match)"
 else
-    echo "# Storage backend: host storage.c"
+    echo "# Storage backend: NATIVE (U32 mode=${SYNA_NATIVE_STORAGE:-1}, default)"
 fi
 echo "# FIRST type 'y' <Enter> to accept the warning; the menu appears only after open() succeeds."
 echo "# Menu (after y): e=enroll  v=verify  i=identify  q=query  w=wipe  s=shutdown"

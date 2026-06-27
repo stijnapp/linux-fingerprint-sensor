@@ -84,6 +84,10 @@ ninja -C build
 
 echo
 echo "=================================================================="
-echo "Built: $SYNA/build/cli/tudor_cli"
-echo "Next:  sudo bash $REPO/scripts/syna-cli.sh"
+echo "Built: $SYNA/build/  (libtudor.so, tudor_host, tudor_host_launcher,"
+echo "       tudor_cli, libfprint-tod/libtudor_tod.so)"
+echo
+echo "Next, pick a path:"
+echo "  fprintd login (real backend):  sudo bash $REPO/scripts/install.sh"
+echo "  standalone CLI (poke sensor):  sudo bash $REPO/scripts/syna-cli.sh"
 echo "=================================================================="

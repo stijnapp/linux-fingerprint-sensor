@@ -1,0 +1,55 @@
+########################################
+#
+# Tudor fingerprint sensor (06cb:00ff) — off-bus fd-passing allow rules.
+#
+# fprintd (SELinux domain fprintd_t) fetches the USB host IPC file descriptor
+# from the tudor host launcher (domain unconfined_service_t) over a private,
+# root-only AF_UNIX SOCK_STREAM socket at /run/tudor-host-launcher-fdpass.sock.
+#
+# This side channel exists because Fedora's default system bus (dbus-broker)
+# silently drops the launcher's connection whenever it returns a unix fd in a
+# D-Bus method reply, so the host fd cannot be handed back over D-Bus. The
+# launcher therefore serves the fd over its own socket via SCM_RIGHTS, and
+# fprintd connect()s to it — which the default policy denies:
+#
+#   avc: denied { write } ... comm="fprintd"
+#        scontext=...:fprintd_t tcontext=...:var_run_t tclass=sock_file
+#
+# These two rules grant fprintd_t exactly the access needed to make that one
+# connection and nothing else; SELinux stays enforcing and fprintd_t stays
+# confined in every other respect.
+#
+# Build + install (no selinux-policy-devel needed):
+#   checkmodule -M -m -o tudor_fdpass.mod tudor_fdpass.te
+#   semodule_package -o tudor_fdpass.pp -m tudor_fdpass.mod
+#   sudo semodule -i tudor_fdpass.pp
+#
+########################################
+
+module tudor_fdpass 1.0.0;
+
+require {
+	type fprintd_t;
+	type var_run_t;
+	type unconfined_service_t;
+	class sock_file write;
+	class unix_stream_socket connectto;
+	class unix_dgram_socket { read write getopt setopt getattr shutdown };
+}
+
+# connect() writes the socket node /run/tudor-host-launcher-fdpass.sock,
+# which (being created at runtime under /run) carries the generic var_run_t
+# label.
+allow fprintd_t var_run_t:sock_file write;
+
+# The actual AF_UNIX stream connect to the launcher's listening socket; the
+# connectto permission is checked against the peer/listener domain, which is
+# the launcher's unconfined_service_t.
+allow fprintd_t unconfined_service_t:unix_stream_socket connectto;
+
+# The host IPC channel itself: the launcher creates the host socket as a
+# socketpair(AF_UNIX, SOCK_DGRAM) and passes one end to fprintd via SCM_RIGHTS.
+# That fd keeps the launcher's unconfined_service_t label, so fprintd_t needs
+# read/write on it to talk to the tudor host. (Normally dontaudit-silenced,
+# which is why no AVC appeared until dontaudit was disabled.)
+allow fprintd_t unconfined_service_t:unix_dgram_socket { read write getopt setopt getattr shutdown };

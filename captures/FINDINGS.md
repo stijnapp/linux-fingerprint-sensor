@@ -1,6 +1,14 @@
 # Synaptics UWP WBDI (06cb:00ff) — reverse-engineering notes
 
-## Goal
+> **OUTCOME (resolved):** the original goal below — a clean from-scratch libfprint driver
+> built from USB captures — was abandoned and is a **dead end** for this sensor (firmware
+> secure-enrollment + uncapturable biometric traffic, see the STRATEGY PIVOT section). The
+> sensor now works on Linux via the **synaTudor relink** instead. See the top-level
+> `README.md` and `docs/V11.1-ADAPTATION.md`. This file is kept as the record of *why* the
+> capture route failed, so the next person doesn't repeat it; the `.pcap`/`.pcapng` files
+> are its raw evidence and are not used by the working driver.
+
+## Goal (ABANDONED — see OUTCOME above)
 libfprint userspace driver for Synaptics UWP WBDI fingerprint sensor on HP Spectre x360.
 USB ID 06cb:00ff. No existing driver. Modeled on libfprint synaptics driver.
 
@@ -36,7 +44,7 @@ USB ID 06cb:00ff. No existing driver. Modeled on libfprint synaptics driver.
   (normal kernel) cannot see it. USBPcap capture on THIS Windows install is a dead end for
   enroll/verify traffic. The only sensor bulk ever captured was a TLS Alert during a device
   teardown (01_init.pcap) which leaks through the normal kernel.
-- Ways around it (see chat):
+- Ways around it (options below):
   A. Disable VBS/Memory Integrity (+ `bcdedit /set hypervisorlaunchtype off`), reboot, recapture.
      May still be blocked if ESS is enforced independently.
   B. Windows guest VM (VirtualBox already installed) with USB passthrough of 06cb:00ff; sniff on
