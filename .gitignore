@@ -1,0 +1,24 @@
+# ── Generated build tree ─────────────────────────────────────────────────────
+# work/synaTudor/ is NOT source. scripts/setup.sh regenerates it from scratch:
+# it clones the references/synaTudor submodule, applies the elitebook hp110 patch
+# and patches/v11.1-00ff.patch, stages the hp-driver/ DLLs, and builds. All of our
+# own changes live in patches/v11.1-00ff.patch, so this whole tree is disposable.
+/work/synaTudor/
+
+# Meson / ninja build output, anywhere it lands
+build/
+
+# `git apply --reject` leftovers (scripts/setup.sh applies patches this way)
+*.rej
+
+# Compiled SELinux policy (scripts/install.sh builds tudor_fdpass in a tmpdir)
+*.pp
+*.mod
+
+# Logs
+*.log
+
+# Editor / OS cruft
+*.swp
+*~
+.DS_Store
