@@ -16,8 +16,10 @@
 # ONLY the children of the common-property user (the one whose a0 info returns ..0100..).
 # Top-level templates (9f02) that aren't under that user are orphans.
 #
-# Known wart: the CLI SEGFAULTs on the final teardown command (after the dump). The
-# enumeration above it is complete and valid; ignore the trailing "dumped core".
+# The CLI now shuts down cleanly (exit 0). Older builds SEGFAULTed on the final
+# teardown: a use-after-free in the WDF object-list destructor (wdf_destroy_obj_list
+# freed the list head without advancing it, so the freed head was destroyed twice).
+# Fixed in libtudor/src/winapi/wdf/object.c; see patches/v11.1-00ff.patch.
 set -u
 REPO="$(cd "$(dirname "$0")/.." && pwd)"
 CLI="$REPO/work/synaTudor/build/cli/tudor_cli"

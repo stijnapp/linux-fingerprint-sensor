@@ -936,6 +936,27 @@ index ffd727a..ae27ac2 100644
  __winfnc NTSTATUS WdfDeviceCreateDeviceInterface(WDF_DRIVER_GLOBALS *globals, WDFOBJECT device_obj, const GUID *interface_guid, const UNICODE_STRING *ref_str) { return STATUS_SUCCESS; }
  WDFFUNC(WdfDeviceCreateDeviceInterface, 27)
  
+diff --git a/libtudor/src/winapi/wdf/object.c b/libtudor/src/winapi/wdf/object.c
+index 549bf17..875fc4d 100644
+--- a/libtudor/src/winapi/wdf/object.c
++++ b/libtudor/src/winapi/wdf/object.c
+@@ -103,7 +103,15 @@ void wdf_destroy_obj_list(struct wdf_object_list *list) {
+     cant_fail_ret(pthread_rwlock_wrlock(&list->lock));
+ 
+     list->dead = true;
+-    while(list->head) winwdf_destroy_object(list->head);
++    while(list->head) {
++        //Advance the head ourselves: wdf_cleanup_obj() skips its unlink (which
++        //is what would otherwise move list->head) while the list is dead, to
++        //avoid re-locking the wrlock we already hold. Without this, the freed
++        //head stays at list->head and the loop re-destroys it -> use-after-free.
++        struct wdf_object *obj = list->head;
++        list->head = obj->next;
++        winwdf_destroy_object(obj);
++    }
+ 
+     cant_fail_ret(pthread_rwlock_unlock(&list->lock));
+ 
 diff --git a/libtudor/src/winapi/windows.h b/libtudor/src/winapi/windows.h
 index 46275e9..0ab981f 100644
 --- a/libtudor/src/winapi/windows.h
