@@ -8,12 +8,26 @@ x360. Tested on **Fedora Workstation 44**.
 all authenticate by fingerprint, with the password always available as a fallback (you
 cannot get locked out).
 
-This is **not** a from-scratch libfprint driver. A clean driver is a dead end for this
-sensor family (the enrollment is secured in firmware — see
-[Why not a clean driver](#why-not-a-clean-driver-the-short-version)). Instead we **relink
-Synaptics' own closed Windows driver DLLs** to run on Linux, using
+This is **not** a from-scratch libfprint driver. Instead we **relink Synaptics' own
+closed Windows driver DLLs** to run on Linux, using
 [Popax21/synaTudor](https://github.com/Popax21/synaTudor), adapted for our specific sensor
 and driver version.
+
+> ### ⚠️ Read this before building: there is now a native driver for this exact sensor
+>
+> When this repo was written it assumed a clean-room driver was impossible for this
+> sensor family. **That was wrong for `06cb:00ff`.**
+> [vojtapl/synaTudorMiS](https://github.com/vojtapl/synaTudorMiS) is a native libfprint
+> driver (`synatlsmoc`) that lists `06CB:00FF` as **tested** — it is the author's own
+> sensor — and it needs no Windows binaries, no PE loader, no sandbox and no TOD.
+> Work on it predates this repository; we simply did not find it.
+>
+> **If you just want your reader to work, try that first.** See
+> [Which path should you take](#which-path-should-you-take).
+>
+> This repo remains useful as: a working fallback, a map of the relink approach, and a
+> written-up account of the blockers (DB2 child-linking, dbus-broker fd-drop, sandbox
+> limits) that anyone touching this hardware will hit either way.
 
 > If you have a **different Synaptics Tudor sensor** (e.g. `06cb:00be`, `06cb:00f0`, or
 > another HP/Lenovo PID), this repo is meant to be a usable map of the whole adaptation —
@@ -21,29 +35,55 @@ and driver version.
 
 ---
 
+## Which path should you take
+
+| | [vojtapl/synaTudorMiS](https://github.com/vojtapl/synaTudorMiS) (native) | this repo (relink) |
+| --- | --- | --- |
+| Windows driver binaries | none | you must supply them |
+| libfprint | a patched fork, drop-in | needs a **TOD**-enabled build |
+| fprintd | needs a small patch (persistent pairing data) | stock |
+| Moving parts | one libfprint driver | PE loader + sandboxed host + D-Bus launcher + TOD shim |
+| Upstream future | aiming at libfprint proper | permanently out-of-tree |
+| Status | "just works", author paused development | working, documented here |
+
+**Try the native driver first.** Come back here if it doesn't work on your machine, or
+if you want the relink for its own sake. The rest of this README is the relink.
+
 ## Quick start (this exact sensor, Fedora)
 
 ```sh
 # 0. build deps (once)
 sudo dnf install -y meson ninja-build gcc pkgconf-pkg-config openssl-devel libusb1-devel
 
-# 1. build the relinked driver (no root, no sensor needed — it's offline)
+# 1. supply the closed driver DLLs — they are NOT in this repo (hp-driver/README.md).
+#    From your own Windows partition, or from an HP SoftPaq:
+./scripts/extract-driver.sh --from-windows /run/media/$USER/Windows
+
+# 2. build the relinked driver (no root, no sensor needed — it's offline;
+#    fetches the reference submodules on first run)
 ./scripts/setup.sh
 
-# 2. deploy it system-wide as an fprintd backend (needs root)
+# 3. deploy it system-wide as an fprintd backend (needs root)
 sudo ./scripts/install.sh
 
-# 3. enroll — the normal Fedora way is the GUI:
+# 4. enroll — the normal Fedora way is the GUI:
 #      Settings ▸ Users ▸ Fingerprint Login   (you choose which finger; the same
 #      panel also removes enrolled fingers). Or on the command line:
 #      fprintd-enroll        # swipe through the stages until "enroll-completed"
 #      fprintd-verify        # confirm it matches
 
-# 4. test: lock the screen (Super+L) and unlock by fingerprint, or:  sudo -k; sudo true
+# 5. test: lock the screen (Super+L) and unlock by fingerprint, or:  sudo -k; sudo true
 ```
 
-Reinstalling from scratch (e.g. on a fresh OS install) is just **`setup.sh` then
-`install.sh`**, then enroll.
+Reinstalling from scratch (e.g. on a fresh OS install) is **`extract-driver.sh`,
+`setup.sh`, `install.sh`**, then enroll.
+
+To take it all back out again — PAM is disarmed first, so this cannot lock you out:
+
+```sh
+sudo ./scripts/uninstall.sh --dry-run   # see what it would do
+sudo ./scripts/uninstall.sh             # remove it
+```
 
 > **Caveat — resetting templates does not reach the sensor.** Removing fingerprints (in the
 > GUI or with `fprintd-delete`) clears *fprintd's* records, but the sensor keeps its
@@ -53,7 +93,8 @@ Reinstalling from scratch (e.g. on a fresh OS install) is just **`setup.sh` then
 > found still holding four orphan template trees from past enroll/delete cycles. They don't
 > cause false matches, since only the live finger is loaded into the matcher, but they never
 > go away.) The only **proven** clean wipe is a **BIOS fingerprint reset**; do that and
-> enroll once if matching gets flaky. See
+> enroll once if matching gets flaky. **The recipes for resetting, re-enrolling and
+> removing are in [`docs/RESET.md`](docs/RESET.md)**; the background is
 > [The blockers we hit](#the-blockers-we-hit-and-how-they-were-solved), point 8.
 
 There is also a standalone CLI path for poking the sensor directly without fprintd:
@@ -106,12 +147,13 @@ What each directory and file in the repository is for.
 | Path          | What it is                                                                                         |
 | ------------- | -------------------------------------------------------------------------------------------------- |
 | `README.md`   | this file                                                                                          |
+| `LICENSE`, `COPYING.md` | LGPL-2.1-or-later, and what this repo does and does not ship (read `COPYING.md`)          |
 | `scripts/`    | everything you run — build, deploy, debug, and the support files they install                      |
 | `patches/`    | **our** changes to synaTudor, as a single git patch (the real source of our work)                  |
-| `hp-driver/`  | the closed HP **v11.1** Windows driver binaries extracted from this laptop                         |
+| `hp-driver/`  | where the closed HP **v11.1** driver DLLs go — **not shipped**; you supply them, see its README    |
 | `references/` | upstream projects as git submodules (synaTudor + the elitebook840 port)                            |
 | `work/`       | build tree + reverse-engineering notes (generated/scratch; not the source of truth)                |
-| `docs/`       | the adaptation write-up (`V11.1-ADAPTATION.md`)                                                    |
+| `docs/`       | the adaptation write-up (`V11.1-ADAPTATION.md`) and the reset/removal runbook (`RESET.md`)         |
 | `captures/`   | Windows USB captures + `FINDINGS.md` — the dead-end investigation that made us pivot to the relink |
 | `.gitmodules` | declares the two submodules under `references/`                                                    |
 
@@ -121,6 +163,10 @@ What each directory and file in the repository is for.
 | ------------------------------------- | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
 | `setup.sh`                            | **build** (no root). Clones the pinned synaTudor base, applies the elitebook hp110 patch then **our** `v11.1-00ff.patch`, stages the HP v11.1 DLLs, runs `meson`/`ninja`. Output: `work/synaTudor/build/`.                                                                                                                                                                                                                                                                                                                |
 | `install.sh`                          | **deploy** (root). `meson install` (binaries → `/sbin/tudor`, the TOD driver, udev rule, systemd unit, D-Bus files) + installs the autosuspend rule + the SELinux module + enables fingerprint in PAM. Idempotent.                                                                                                                                                                                                                                                                                                        |
+| `uninstall.sh`                        | **remove** (root). Reverses `install.sh` in the safe order — PAM first, so a partial run can never point a login stack at a driver that is gone. `--dry-run` to preview, `--purge` to also drop host-side templates.                                                                                                                                                                                                                              |
+| `extract-driver.sh`                   | stage the closed DLLs into `hp-driver/` from your own Windows partition or an HP SoftPaq, and verify them against the reference hashes. Required before `setup.sh` — the binaries are not in this repo.                                                                                                                                                                                                                                              |
+| `syna-status.sh`                      | show fprintd's records next to what's actually in the sensor's flash — the desync in one view. `--deep` (root) enumerates DB2.                                                                                                                                                                                                                                                                                                                       |
+| `common.sh`                           | sourced by the sensor-facing scripts: the VID/PID (**change it here to port**), store/log paths, sensor-wake and fprintd-release helpers.                                                                                                                                                                                                                                                                                                           |
 | `syna-cli.sh`                         | run the standalone `tudor_cli` against the sensor (no fprintd) — for poking enroll/verify/identify directly.                                                                                                                                                                                                                                                                                                                                                                                                              |
 | `syna-debug.sh`                       | launch the CLI non-interactively and, if it **hangs**, snapshot all-thread backtraces (`eu-stack` + `gdb`). A diagnostic from the debugging phase; not needed for normal use.                                                                                                                                                                                                                                                                                                                                             |
 | `99-fingerprint-no-autosuspend.rules` | **udev rule.** Keeps the sensor from USB-autosuspending. These match-in-sensor readers sleep after ~2 s; the next command wakes them mid-transfer and the reply comes back corrupted. `install.sh` copies this to `/etc/udev/rules.d/`.                                                                                                                                                                                                                                                                                   |
@@ -147,16 +193,26 @@ USB-serial device probe, extra Windows API stubs, and so on. It is validated to 
 cleanly (0 rejects) on a fresh base. **If you change driver source, regenerate this patch**
 — it, not the `work/` tree, is what `setup.sh` re-applies on a clean build.
 
-### `hp-driver/` — the closed binaries (kept, load-bearing)
+### `hp-driver/` — the closed binaries (load-bearing, **not shipped**)
 
-The genuine Synaptics v11.1 ("111") Windows driver pulled off this laptop. `setup.sh`
-embeds the two DLLs into the build (renamed to the `104` names libtudor expects).
+The genuine Synaptics v11.1 ("111") Windows driver. **This repository does not contain
+it** — it is Synaptics' copyrighted binary and not ours to redistribute. You supply your
+own copy from hardware you own, and `setup.sh` embeds it into the build (renamed to the
+`104` names libtudor expects).
 
-| File                                    | What                                                                                      |
-| --------------------------------------- | ----------------------------------------------------------------------------------------- |
-| `synaWudfBioUsb111.dll`                 | the UMDF USB driver — **contains the matcher and the DB2 template logic**                 |
-| `synaFpAdapter111.dll`                  | thin WBF adapter shim (the `Wbio*Interface` surface libtudor drives)                      |
-| `synawudfbiousbuwp.inf`, `synaUMDF.cat` | Windows install manifest + catalog signature (kept for provenance; not used by the build) |
+```sh
+./scripts/extract-driver.sh --from-windows /run/media/$USER/Windows
+./scripts/extract-driver.sh --from-softpaq ~/Downloads/spXXXXXX.exe
+./scripts/extract-driver.sh --check          # verify what's staged
+```
+
+| File                    | What                                                                      |
+| ----------------------- | ------------------------------------------------------------------------- |
+| `synaWudfBioUsb111.dll` | the UMDF USB driver — **contains the matcher and the DB2 template logic** |
+| `synaFpAdapter111.dll`  | thin WBF adapter shim (the `Wbio*Interface` surface libtudor drives)      |
+
+[`hp-driver/README.md`](hp-driver/README.md) has the exact paths, the reference SHA-256s,
+and the driver version this was developed against.
 
 ### `references/` — upstream, as submodules (don't edit)
 
@@ -170,7 +226,7 @@ embeds the two DLLs into the build (renamed to the `104` names libtudor expects)
 | Path              | What                                                                                                                                                                                                                                                                                                                                                        |
 | ----------------- | ----------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
 | `work/synaTudor/` | a throwaway clone that `setup.sh` builds in (base + patches applied). The live build is `work/synaTudor/build/`. Reproducible from scratch — safe to delete and rebuild.                                                                                                                                                                                    |
-| `work/re-notes/`  | static reverse-engineering notes that cracked the storage bug: `template-load-chain.md` (how the closed driver loads templates into the matcher, with the decoded DB2 opcode stream), DLL `*.exports.txt` / `*.strings.txt`, and `bio.disasm.txt` (a 12 MB objdump of the driver — regenerate-able, kept because grepping it was how we found the opcodes). |
+| `work/re-notes/`  | static reverse-engineering notes that cracked the storage bug: `template-load-chain.md` (how the closed driver loads templates into the matcher, with the decoded DB2 opcode stream) and the DLL `*.exports.txt` / `*.strings.txt` interface dumps. The 12 MB `bio.disasm.txt` an earlier revision committed is gone — regenerate it when you need it with `objdump -d hp-driver/synaWudfBioUsb111.dll > work/re-notes/bio.disasm.txt` (see `COPYING.md`). |
 
 ### `captures/` — the Windows-capture dead end (kept as evidence)
 
@@ -189,15 +245,27 @@ attempt. `FINDINGS.md` is the readable summary; the captures are its raw evidenc
 
 ---
 
-## Why not a clean driver (the short version)
+## Why we relinked instead of writing a driver
 
 This sensor does **secure enrollment** (SDCP-style pairing; templates live encrypted in
 the sensor's own flash and matching happens _in the sensor_). You cannot reconstruct the
 host side from USB captures, and on this machine the biometric traffic isn't even
 capturable: Windows routes it through the VBS secure kernel and USBPcap can't see USB-3
-bulk transfers anyway. The closest prior project (elitebook840, the neighbouring
-`06cb:00f0`) tried the clean-driver route and called it a dead end. So we relink the real
-driver instead. Full investigation: `captures/FINDINGS.md`.
+bulk transfers anyway. Full investigation: `captures/FINDINGS.md`.
+
+That much still holds — **captures** really are a dead end here. What does not hold is
+the conclusion we drew from it.
+
+The closest prior project (elitebook840, the neighbouring `06cb:00f0`) tried the
+clean-driver route and called it a dead end, and we generalised that to the whole
+family. In fact
+[vojtapl](https://github.com/vojtapl/synaTudorMiS) had already got a native driver
+working on `06cb:00ff` by reverse-engineering the **Windows driver binary** rather than
+the wire — the route captures can't reach. So a clean driver was possible; we picked the
+relink because we didn't know that, and because the relink gets you there without
+reimplementing the protocol at all.
+
+Both routes are real. See [Which path should you take](#which-path-should-you-take).
 
 ---
 
@@ -250,7 +318,8 @@ The interesting part for anyone adapting this. Each was a hard stop; each is now
    two **desync** — confirmed by enumerating the sensor's DB2, where a one-finger fprintd
    install was found still holding four orphan template trees from past enroll/delete cycles
    (the matcher ignores them, but they never go away). A **BIOS fingerprint reset** is the
-   only proven clean wipe; enroll once cleanly afterwards.
+   only proven clean wipe; enroll once cleanly afterwards. Recipes are in
+   [`docs/RESET.md`](docs/RESET.md), and `scripts/syna-status.sh` shows both stores at once.
    _(The firmware has a `DB2_FORMAT` opcode (~`0xa4`) that would erase the flash directly,
    but it is destructive and unverified — we deliberately **never** send it.)_
 
@@ -264,11 +333,11 @@ The interesting part for anyone adapting this. Each was a hard stop; each is now
 If your sensor is another Synaptics Tudor PID:
 
 1. **Get your driver DLLs.** Pull `synaWudfBioUsbXXX.dll` + `synaFpAdapterXXX.dll` for your
-   machine (off a Windows install, or the vendor SoftPaq). Drop them in `hp-driver/` and
-   update the filenames in `scripts/setup.sh` (the staging step) and the `download_driver.sh`
-   override it writes.
-2. **Set your PID.** It's `-P00ff` in `syna-cli.sh` and the device match in the driver/udev
-   rule — change `00ff` to yours.
+   machine — `scripts/extract-driver.sh` does this off a mounted Windows install or a vendor
+   SoftPaq. Then update the filenames in `scripts/extract-driver.sh`, `scripts/setup.sh` (the
+   staging step) and the `download_driver.sh` override it writes.
+2. **Set your PID.** `SENSOR_PID` in `scripts/common.sh` covers every script; also update
+   the device match in the driver and in `scripts/99-fingerprint-no-autosuspend.rules`.
 3. **Run the import loop.** Build with `-DDBGIMPORT=true` (setup.sh already does), run the
    CLI, and add a stub for every `Unresolved import … called!` your driver generation needs
    that ours didn't. The coverage table in `docs/V11.1-ADAPTATION.md` shows the cheap
@@ -290,8 +359,15 @@ DLL-name and PID changes.
 - [MarcelineVPQ/elitebook840-fingerprint](https://github.com/MarcelineVPQ/elitebook840-fingerprint)
   — the `06cb:00f0` port whose hp110 patch and udev rule we reuse.
 
-This repository contains **proprietary Synaptics/HP driver binaries** (`hp-driver/`) under
-`hp-driver/synawudfbiousbuwp.inf`'s original licence — they are included only so this
-specific machine's owner can run their own hardware on Linux. Do not redistribute them.
-The scripts, patches, and notes here are offered in the same spirit as the upstream
-projects (see their licences).
+- [vojtapl/synaTudorMiS](https://github.com/vojtapl/synaTudorMiS) — the native
+  `synatlsmoc` driver for this same sensor; the path most people should take first.
+
+**Licence: LGPL-2.1-or-later** (see [`LICENSE`](LICENSE)), matching upstream synaTudor,
+which `patches/v11.1-00ff.patch` is a derivative of.
+
+This repository does **not** contain the proprietary Synaptics/HP driver binaries. An
+earlier revision did, alongside a line telling you not to redistribute them — which
+publishing them here contradicted. They are now gone from the working tree and from every
+commit in history, and you supply your own from hardware you own. The reasoning, and what
+*is* kept from those binaries (export tables, string dumps) and why that is a different
+thing, is in [`COPYING.md`](COPYING.md).
