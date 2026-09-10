@@ -26,6 +26,30 @@ SYNA_BASE_COMMIT="31dfdb0"   # pinned base the HP port was built against (== our
 
 mkdir -p "$WORK"
 
+# 0. The two reference projects are git submodules, and a plain `git clone` leaves them
+#    empty — so do it here rather than making the README's step 1 fail on a fresh clone.
+if [ ! -e "$REPO/references/synaTudor/.git" ] || [ ! -e "$ELITE/.git" ]; then
+    echo "Fetching reference submodules (synaTudor, elitebook840-fingerprint)..."
+    git -C "$REPO" submodule update --init --depth 1 references/synaTudor references/elitebook840-fingerprint
+fi
+
+# 0b. The closed driver DLLs are NOT shipped with this repo (they are Synaptics'
+#     copyrighted binaries). Fail here with the fix rather than deep in the build.
+if [ ! -f "$HPDRV/synaWudfBioUsb111.dll" ] || [ ! -f "$HPDRV/synaFpAdapter111.dll" ]; then
+    cat >&2 <<'MISSING'
+ERROR: the Synaptics v11.1 driver DLLs are missing from hp-driver/.
+
+They are not distributed with this repository — you supply them from hardware you
+own. Either of these will stage them:
+
+    ./scripts/extract-driver.sh --from-windows /run/media/$USER/Windows
+    ./scripts/extract-driver.sh --from-softpaq ~/Downloads/spXXXXXX.exe
+
+See hp-driver/README.md for where the files live and what they should hash to.
+MISSING
+    exit 1
+fi
+
 # 1. Fresh synaTudor tree cloned from our pinned submodule (keeps the submodule clean,
 #    gives us a real git repo so `git apply` works predictably).
 if [ ! -d "$SYNA/.git" ]; then
@@ -40,17 +64,21 @@ git clean -fdx >/dev/null 2>&1 || true
 #    USER32/CPowerStateWindow, CAPI AES, LoadLibraryW, GetModuleHandle(NULL) fix),
 #    meson wiring, and a libtudor/CLI-only top-level meson. Made against this exact
 #    base commit, so it should apply with no rejects.
-git apply --reject "$ELITE/patches/synaTudor-hp110.patch"
+git apply --reject "$ELITE/patches/synaTudor-hp110.patch" || true
 if find "$SYNA" -name '*.rej' | grep -q .; then
-    echo "WARNING: hp110 patch produced .rej files — inspect them:"; find "$SYNA" -name '*.rej'
+    echo "ERROR: hp110 patch produced .rej files — the base moved. Inspect:" >&2
+    find "$SYNA" -name '*.rej' >&2
+    exit 1
 fi
 
 # 2b. Apply OUR v11.1 / 06cb:00ff deltas on top (WDF stubs etc. the newer driver needs
 #     that the v11.0 port didn't). Grows as the DBGWDF/DBGIMPORT loop finds more.
 if [ -f "$REPO/patches/v11.1-00ff.patch" ]; then
-    git apply --reject "$REPO/patches/v11.1-00ff.patch"
+    git apply --reject "$REPO/patches/v11.1-00ff.patch" || true
     if find "$SYNA" -name '*.rej' | grep -q .; then
-        echo "WARNING: v11.1 patch produced .rej files — inspect them:"; find "$SYNA" -name '*.rej'
+        echo "ERROR: v11.1 patch produced .rej files — inspect them:" >&2
+        find "$SYNA" -name '*.rej' >&2
+        exit 1
     fi
 fi
 
