@@ -22,3 +22,16 @@ build/
 *.swp
 *~
 .DS_Store
+
+# ── Proprietary driver binaries — NEVER commit ───────────────────────────────
+# Supplied per-machine by scripts/extract-driver.sh; see hp-driver/README.md.
+hp-driver/*.dll
+hp-driver/*.cat
+hp-driver/*.inf
+hp-driver/*.sys
+
+# Regenerable RE output (12 MB of objdump; see COPYING.md)
+work/re-notes/*.disasm.txt
+
+# Root-owned run logs (scripts/common.sh puts these in /var/log/syna-tudor)
+/var/log/syna-tudor/
