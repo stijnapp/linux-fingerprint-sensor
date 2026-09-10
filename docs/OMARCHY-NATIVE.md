@@ -20,6 +20,14 @@ $ pkg-config --variable=tod_driversdir libfprint-2
         # empty; /usr/lib/libfprint-2/ does not exist
 ```
 
+`scripts/setup.sh` on this machine gets all the way through — submodules, both patches
+with zero rejects, DLLs staged — and then stops dead at meson configure:
+
+```
+Run-time dependency libfprint-2-tod-1 found: NO  (tried pkg-config)
+libfprint-tod/meson.build:12:20: ERROR: Dependency "libfprint-2-tod-1" not found
+```
+
 So the relink path on Arch additionally needs AUR `libfprint-tod`, which conflicts with
 both stock `libfprint` and Omarchy's `libfprint-git`. The native driver needs no TOD at
 all. (Two things do get easier: Arch has no SELinux, so `scripts/tudor_fdpass.te` is
