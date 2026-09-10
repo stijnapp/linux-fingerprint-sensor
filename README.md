@@ -49,6 +49,12 @@ and driver version.
 **Try the native driver first.** Come back here if it doesn't work on your machine, or
 if you want the relink for its own sake. The rest of this README is the relink.
 
+On **Arch / Omarchy** the native route is the only sane one — Arch's libfprint has no
+TOD support, so the relink needs an extra conflicting libfprint from the AUR, while the
+native driver needs none. [`docs/OMARCHY-NATIVE.md`](docs/OMARCHY-NATIVE.md) is the full
+build, including the mandatory fprintd patch and the reason you must **not** run
+`omarchy-setup-security-fingerprint` afterwards.
+
 ## Quick start (this exact sensor, Fedora)
 
 ```sh
@@ -153,7 +159,7 @@ What each directory and file in the repository is for.
 | `hp-driver/`  | where the closed HP **v11.1** driver DLLs go — **not shipped**; you supply them, see its README    |
 | `references/` | upstream projects as git submodules (synaTudor + the elitebook840 port)                            |
 | `work/`       | build tree + reverse-engineering notes (generated/scratch; not the source of truth)                |
-| `docs/`       | the adaptation write-up (`V11.1-ADAPTATION.md`) and the reset/removal runbook (`RESET.md`)         |
+| `docs/`       | the adaptation write-up (`V11.1-ADAPTATION.md`), the reset/removal runbook (`RESET.md`), and the native-driver build for Arch/Omarchy (`OMARCHY-NATIVE.md`) |
 | `captures/`   | Windows USB captures + `FINDINGS.md` — the dead-end investigation that made us pivot to the relink |
 | `.gitmodules` | declares the two submodules under `references/`                                                    |
 
