@@ -23,6 +23,16 @@ build/
 *~
 .DS_Store
 
+# ── Arch/Omarchy native-driver build output ──────────────────────────────────
+# makepkg working trees and the binaries it produces. All reproducible from
+# omarchy/pkgbuild/*/PKGBUILD; see omarchy/build.sh.
+omarchy/packages/
+omarchy/pkgbuild/*/src/
+omarchy/pkgbuild/*/pkg/
+omarchy/pkgbuild/*/*.pkg.tar.zst
+omarchy/pkgbuild/*/fprintd/
+omarchy/pkgbuild/*/libfprint/
+
 # ── Proprietary driver binaries — NEVER commit ───────────────────────────────
 # Supplied per-machine by scripts/extract-driver.sh; see hp-driver/README.md.
 hp-driver/*.dll

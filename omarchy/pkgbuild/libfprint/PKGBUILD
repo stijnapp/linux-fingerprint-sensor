@@ -1,0 +1,54 @@
+# Maintainer: arbitar <aur@arbi.in>
+
+# Driver: vojtapl/synaTudorMiS (synatlsmoc), integrated into vojtapl/libfprint
+# Supports: 06CB:00C9 and family (HP Spectre x360 13-aw0 etc.)
+
+pkgname=libfprint-vojtapl-synatudormis-git
+pkgver=r.2f8b3e7
+pkgrel=1
+pkgdesc="libfprint with Synaptics Tudor Match-in-Sensor driver (synatlsmoc, 06CB:00C9 family)"
+url="https://github.com/vojtapl/synaTudorMiS"
+arch=(x86_64)
+license=(LGPL-2.1-or-later)
+depends=(glib2 libgudev libusb glibc openssl libgusb)
+makedepends=(git meson ninja)
+optdepends=('fprintd: userspace daemon and PAM module for fingerprint readers')
+conflicts=(libfprint libfprint-tod libfprint-tod-git
+           libfprint-2-tod1-synatudor-git)
+provides=(libfprint libfprint-2.so)
+replaces=(libfprint)
+# Pinned to the reviewed commit rather than #branch=main, so what gets built is
+# what was audited (6 commits on top of upstream 1.94.9, all additive).
+_commit=2f8b3e781b53793d11ed53d3054977271ed6689e  # 'add support for 06cb:00d8', 2026-07-08
+source=("libfprint::git+https://github.com/vojtapl/libfprint.git#commit=$_commit")
+sha256sums=('SKIP')
+
+pkgver() {
+  cd "$srcdir/libfprint"
+  printf "r.%s" "$(git rev-parse --short HEAD)"
+}
+
+prepare() {
+  cd "$srcdir/libfprint"
+  # uncomment 00C9 (HP Spectre x360 13-aw0 and similar)
+  sed -i 's|// { .vid = SYNAPTICS_VENDOR_ID,  .pid = 0x00C9, },|{ .vid = SYNAPTICS_VENDOR_ID, .pid = 0x00C9, },|' \
+    libfprint/drivers/synatlsmoc/synatlsmoc.c
+}
+
+build() {
+  # gobject-introspection is an undeclared makedepend of this PKGBUILD; when it is
+  # absent, build without it. Stock Arch libfprint does ship FPrint-2.0.typelib, so
+  # prefer having it installed — this is the fallback, not the goal.
+  local _intro=true
+  command -v g-ir-scanner >/dev/null 2>&1 || _intro=false
+
+  arch-meson libfprint build \
+    -Dintrospection=$_intro \
+    -Ddoc=false \
+    -Dudev_rules_dir=/usr/lib/udev/rules.d
+  meson compile -C build
+}
+
+package() {
+  meson install -C build --destdir "$pkgdir"
+}

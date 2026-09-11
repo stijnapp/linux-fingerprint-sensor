@@ -10,6 +10,13 @@ half for you. What's missing is only a libfprint that can drive the sensor.
 
 Written and verified on Omarchy (Arch, kernel 7.2), sensor `06cb:00ff`, September 2026.
 
+> **There are scripts for all of this now.** [`../omarchy/`](../omarchy/) has
+> `build.sh`, `install.sh` and `setup-pam.sh`, the two PKGBUILDs, and the corrected
+> persistence patch. This document is the *why*; that directory is the *how*.
+>
+> **Confirmed working** on an HP Spectre x360 running Omarchy, 2026-09-11: sudo, polkit
+> and the lock screen, password still falling back.
+
 ## Why not the relink here
 
 Arch's `libfprint` has **no TOD support** — the relink's `libtudor_tod.so` needs
@@ -64,6 +71,57 @@ step most likely to be missed.
 
 The patch applies cleanly to fprintd **v1.94.5**, which is what Arch ships.
 
+#### …and the patch as published does not work
+
+Upstream's patch adds both calls, but it saves from `fprint_device_dispose()` — **which
+never runs.** fprintd's `main()` ends:
+
+```c
+g_main_loop_run (loop);
+g_bus_unown_name (name_id);
+store.deinit ();
+return 0;                 /* the manager is never unreffed */
+```
+
+No `FprintDevice` is ever disposed, so nothing is ever written. The pairing data lives in
+RAM and dies with the process. Since fprintd idles out ~90 s after its last use, the
+symptom is distinctive and thoroughly misleading: `fprintd-verify` works immediately
+after enrolling, `sudo` fails a few minutes later, and then stops prompting for a finger
+at all — because by then the journal has already said
+
+```
+Deleted stored finger 7 for user <you> as it is unknown to device.
+```
+
+The fix is one call, in `dev_open_cb()` — right after a successful open, when the pairing
+has just happened and the data is known good, rather than at a teardown that never
+arrives. It no-ops when the stored bytes already match:
+
+```c
+  g_debug ("claimed device %d", priv->id);
+
++ if (!store.persistent_data_save (priv->dev, &error))
++   g_warning ("Failed to save persistent data: %s", error->message);
+
+  fprint_dbus_device_complete_claim (FPRINT_DBUS_DEVICE (rdev), invocation);
+```
+
+Two smaller things worth fixing in the same patch: it `#define`s
+`FILE_STORAGE_PATH "/home/vojtapl/test"` (harmless in practice only because systemd's
+`StateDirectory=fprint` sets `$STATE_DIRECTORY`, which `get_storage_path()` prefers — but
+restore it to `/var/lib/fprint` anyway), and it leaves four `g_critical("… called!")`
+debug lines in. Those are also the cheapest diagnostic available: if
+`journalctl -u fprintd` never shows `Save called!`, the save path is not executing.
+
+The corrected patch is [`../omarchy/pkgbuild/fprintd/fprintd-load-store-persistent-data-from-device.patch`](../omarchy/pkgbuild/fprintd/fprintd-load-store-persistent-data-from-device.patch).
+
+Verify it took, rather than trusting a fresh `fprintd-verify`:
+
+```sh
+sudo ls -l /var/lib/fprint/0-persistent/synatlsmoc/   # must exist
+systemctl restart fprintd && fprintd-list "$USER"     # finger must survive
+```
+
 Usefully, the coupling fails loudly rather than silently: the patched daemon has
 `fp_device_get_persistent_data` as an undefined symbol, so if libfprint is ever swapped
 back to stock, fprintd refuses to start instead of quietly re-pairing.
@@ -89,7 +147,7 @@ cd fprintd
 curl -O https://raw.githubusercontent.com/vojtapl/synaTudorMiS/master/libfprint/fprintd-load-store-persistent-data-from-device.patch
 #    add it to source=(), add 'SKIP' to b2sums, and in prepare() after the cherry-pick:
 #      git apply -v ../fprintd-load-store-persistent-data-from-device.patch
-#    also set pkgrel=2.1 — see "Keeping it" below
+#    also set pkgrel=2.2 — see "Keeping it" below
 makepkg -s
 cd ..
 
@@ -102,6 +160,12 @@ sudo pacman -U --ask 4 \
 Two notes on that AUR PKGBUILD: `gobject-introspection` is an **undeclared makedepend**
 (the build dies at `g-ir-scanner ... NO` without it), and stock Arch libfprint does ship
 `FPrint-2.0.typelib`, so install it rather than building with `-Dintrospection=false`.
+If you don't, fprintd's `check()` fails one test — `tests/fprintd.py` imports the FPrint
+namespace — on an otherwise perfect build, and you'll need `makepkg --nocheck`.
+
+The fprintd source tarball is PGP-signed, and makepkg checks it against *your* keyring,
+so import the maintainer's key first or the build stops at
+`unknown public key 9449C2F50996635F`.
 
 ## Enroll
 
@@ -156,9 +220,10 @@ name — remove that separately if you want it gone.
 
 - **`pacman -Syu` will replace your patched fprintd** with the stock one as soon as
   Arch bumps it, and the daemon then fails to start (undefined symbol — see above).
-  Setting `pkgrel=2.1` keeps `1.94.5-2.1` ahead of the official `1.94.5-2` so routine
+  Setting `pkgrel=2.2` keeps `1.94.5-2.2` ahead of the official `1.94.5-2` so routine
   upgrades leave it alone; a genuine new release still wins, and that's your cue to
-  rebuild.
+  rebuild. Prefer this to `IgnorePkg`, which pins the package silently and permanently —
+  you would stop receiving fprintd security updates without ever being told.
 - **Don't run the Omarchy fingerprint wizard afterwards**, for the reason above.
 - **Autosuspend.** systemd's `60-autosuspend-fingerprint-reader.hwdb` sets
   `ID_AUTOSUSPEND=1` for `06CB:00FF`, so the sensor sits at `power/control=auto` with a

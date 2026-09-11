@@ -51,9 +51,12 @@ if you want the relink for its own sake. The rest of this README is the relink.
 
 On **Arch / Omarchy** the native route is the only sane one — Arch's libfprint has no
 TOD support, so the relink needs an extra conflicting libfprint from the AUR, while the
-native driver needs none. [`docs/OMARCHY-NATIVE.md`](docs/OMARCHY-NATIVE.md) is the full
-build, including the mandatory fprintd patch and the reason you must **not** run
-`omarchy-setup-security-fingerprint` afterwards.
+native driver needs none. **[`omarchy/`](omarchy/) has ready-to-run scripts for it**
+(`build.sh`, `install.sh`, `setup-pam.sh`, both PKGBUILDs, and a corrected persistence
+patch — upstream's saves from a code path that never executes, which quietly deletes
+every enrollment ~90 s after you make it). Confirmed working on an HP Spectre x360 under
+Omarchy. [`docs/OMARCHY-NATIVE.md`](docs/OMARCHY-NATIVE.md) is the reasoning behind it,
+including why you must **not** run `omarchy-setup-security-fingerprint` afterwards.
 
 ## Quick start (this exact sensor, Fedora)
 
@@ -154,12 +157,13 @@ What each directory and file in the repository is for.
 | ------------- | -------------------------------------------------------------------------------------------------- |
 | `README.md`   | this file                                                                                          |
 | `LICENSE`, `COPYING.md` | LGPL-2.1-or-later, and what this repo does and does not ship (read `COPYING.md`)          |
-| `scripts/`    | everything you run — build, deploy, debug, and the support files they install                      |
+| `scripts/`    | everything you run **for the relink** — build, deploy, debug, and the support files they install    |
+| `omarchy/`    | the **native-driver** path for Arch/Omarchy: build + install + PAM scripts, PKGBUILDs, the fixed fprintd patch |
 | `patches/`    | **our** changes to synaTudor, as a single git patch (the real source of our work)                  |
 | `hp-driver/`  | where the closed HP **v11.1** driver DLLs go — **not shipped**; you supply them, see its README    |
 | `references/` | upstream projects as git submodules (synaTudor + the elitebook840 port)                            |
 | `work/`       | build tree + reverse-engineering notes (generated/scratch; not the source of truth)                |
-| `docs/`       | the adaptation write-up (`V11.1-ADAPTATION.md`), the reset/removal runbook (`RESET.md`), and the native-driver build for Arch/Omarchy (`OMARCHY-NATIVE.md`) |
+| `docs/`       | the adaptation write-up (`V11.1-ADAPTATION.md`), the reset/removal runbook (`RESET.md`), and the reasoning behind the native-driver path (`OMARCHY-NATIVE.md`) |
 | `captures/`   | Windows USB captures + `FINDINGS.md` — the dead-end investigation that made us pivot to the relink |
 | `.gitmodules` | declares the two submodules under `references/`                                                    |
 
