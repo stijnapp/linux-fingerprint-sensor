@@ -1,0 +1,55 @@
+#!/bin/bash
+# systemd sleep hook: keep the Synaptics Tudor sensor sane across suspend/resume.
+#
+# THE PROBLEM
+# Omarchy holds a sleep-delay inhibitor ("Lock screen before suspend", see
+# omarchy-system-sleep-monitor) and locks the screen *inside* the suspend delay
+# window. The lock screen immediately starts a fingerprint auth, so fprintd opens
+# the sensor and negotiates a TLS session microseconds before the machine goes
+# down. fprintd tries to take its own sleep-delay inhibitor so it can shut the
+# device down cleanly and is refused -- the suspend is already in progress:
+#
+#   systemd-logind[1064]: Lid closed. Suspending...
+#   fprintd[538720]: Failed to install a sleep delay inhibitor:
+#                    ...OperationInProgress: already running
+#   fprintd[538720]: Sensor is in TLS session but host is not
+#
+# The driver's suspend handler only cancels the in-flight operation; it does not
+# close the TLS session (see synatlsmoc_suspend() -- only synatlsmoc_close()
+# reaches CLOSE_TLS_SESSION_CLOSE). So we suspend with the device open, the host
+# side of the session dies with the RAM image, and on resume the sensor still
+# believes a session is up. The driver notices and tries to force it closed, but
+# the sensor also still has the cancelled "wait for finger" queued and answers
+# "device is still busy with another operation" -- or stops answering at all.
+#
+# The visible symptom: the lock screen shows the fingerprint icon and nothing
+# happens, forever. The claim is never released, so fprintd stays alive burning
+# CPU and every later attempt gets "Device was already claimed".
+#
+# THE FIX
+#   pre   stop fprintd so the sensor is closed, not mid-verify, when we go down.
+#   post  reset the USB device so any residual session or queued operation is
+#         gone before the lock screen asks for a finger again.
+#
+# fprintd is socket/D-Bus activated, so stopping it costs nothing -- the next
+# authentication starts it again automatically.
+
+SENSOR_ID="06cb:00ff"
+
+case "$1" in
+  pre)
+    # Bounded: a wedged fprintd must never hold up the suspend. systemd's default
+    # stop timeout is 90s, which would be a very long lid-close.
+    timeout 5 systemctl stop fprintd.service 2>/dev/null \
+      || systemctl kill -s KILL fprintd.service 2>/dev/null
+    ;;
+  post)
+    # The sensor may not be re-enumerated yet the instant we resume.
+    for _ in 1 2 3 4 5; do
+      usbreset "$SENSOR_ID" >/dev/null 2>&1 && break
+      sleep 0.5
+    done
+    ;;
+esac
+
+exit 0
