@@ -14,12 +14,26 @@ set -euo pipefail
 [ "$(id -u)" -eq 0 ] || { echo "needs root: sudo $0 $*" >&2; exit 1; }
 
 DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
-# /etc, not /usr/lib: /usr/lib/systemd/system-sleep belongs to packages.
-DEST=/etc/systemd/system-sleep/fingerprint-reset
+
+# This MUST be /usr/lib, even though that is normally package territory.
+# systemd-sleep compiles in exactly one hook directory and does not read /etc:
+#     $ strings /usr/lib/systemd/systemd-sleep | grep system-sleep
+#     /usr/lib/systemd/system-sleep
+# A hook dropped in /etc/systemd/system-sleep/ is silently never executed --
+# no error, no log line, it simply does nothing. Ask me how I know.
+DEST=/usr/lib/systemd/system-sleep/fingerprint-reset
+LEGACY=/etc/systemd/system-sleep/fingerprint-reset
 
 if [ "${1:-}" = "--undo" ]; then
     rm -f "$DEST" && echo "removed $DEST"
+    [ -e "$LEGACY" ] && rm -f "$LEGACY" && echo "removed $LEGACY"
     exit 0
+fi
+
+# Clean up the version that never ran.
+if [ -e "$LEGACY" ]; then
+    rm -f "$LEGACY"
+    echo "removed $LEGACY (systemd never read that directory)"
 fi
 
 command -v usbreset >/dev/null || {
@@ -31,6 +45,9 @@ install -Dm755 "$DIR/sleep-hook/fingerprint-reset" "$DEST"
 echo "installed $DEST"
 
 # No daemon-reload needed: systemd-sleep scans the directory at suspend time.
+echo
+echo "Confirm it ran after a real suspend:"
+echo "    journalctl -t fingerprint-reset"
 echo
 echo "Test it without a real suspend:"
 echo "    sudo $DEST pre  suspend"

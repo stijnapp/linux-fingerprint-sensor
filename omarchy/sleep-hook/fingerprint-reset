@@ -36,19 +36,31 @@
 
 SENSOR_ID="06cb:00ff"
 
+# Everything here is logged, so "did the hook actually run?" is answerable after
+# the fact with:  journalctl -t fingerprint-reset
+log() { logger -t fingerprint-reset "$*"; }
+
 case "$1" in
   pre)
     # Bounded: a wedged fprintd must never hold up the suspend. systemd's default
     # stop timeout is 90s, which would be a very long lid-close.
-    timeout 5 systemctl stop fprintd.service 2>/dev/null \
-      || systemctl kill -s KILL fprintd.service 2>/dev/null
+    if timeout 5 systemctl stop fprintd.service 2>/dev/null; then
+      log "pre: stopped fprintd"
+    else
+      systemctl kill -s KILL fprintd.service 2>/dev/null
+      log "pre: fprintd did not stop in 5s, killed it"
+    fi
     ;;
   post)
     # The sensor may not be re-enumerated yet the instant we resume.
-    for _ in 1 2 3 4 5; do
-      usbreset "$SENSOR_ID" >/dev/null 2>&1 && break
+    for attempt in 1 2 3 4 5; do
+      if usbreset "$SENSOR_ID" >/dev/null 2>&1; then
+        log "post: reset $SENSOR_ID on attempt $attempt"
+        exit 0
+      fi
       sleep 0.5
     done
+    log "post: FAILED to reset $SENSOR_ID after 5 attempts"
     ;;
 esac
 

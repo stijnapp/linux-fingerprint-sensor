@@ -128,11 +128,26 @@ Authorization denied to :1.20473 to call method 'Claim' ...: Device was already 
 
 It clears on its own once fprintd finally exits, which is why it looks intermittent.
 
-`setup-sleep-hook.sh` installs `/etc/systemd/system-sleep/fingerprint-reset`, which
+`setup-sleep-hook.sh` installs `/usr/lib/systemd/system-sleep/fingerprint-reset`, which
 stops fprintd before the machine goes down (bounded by `timeout 5`, so a wedged daemon
 can never stall a lid-close) and `usbreset`s the sensor on resume, clearing any residual
 session or queued operation before the lock screen asks for a finger again. fprintd is
 D-Bus activated, so stopping it costs nothing.
+
+It has to live in `/usr/lib`, not `/etc`, however wrong that feels for local
+configuration. `systemd-sleep` compiles in a single hook directory and never looks at
+`/etc/systemd/system-sleep/`:
+
+```sh
+$ strings /usr/lib/systemd/systemd-sleep | grep system-sleep
+/usr/lib/systemd/system-sleep
+```
+
+A hook placed in `/etc` is not an error — it simply never runs, with nothing in any log
+to say so. Hence the `logger` calls in the hook: after any suspend,
+`journalctl -t fingerprint-reset` tells you whether it fired, so you are never guessing.
+And beware short test suspends — a 9-second suspend won't reproduce the wedge no matter
+what, so only a genuinely long one proves anything.
 
 ## Keeping it through upgrades
 
