@@ -1,0 +1,35 @@
+[Unit]
+Description=Recover the fingerprint sensor when it wedges
+Documentation=https://github.com/stijnapp/linux-fingerprint-sensor
+# Only meaningful once there is a journal to read and a device to reset.
+After=systemd-journald.service fprintd.service
+Wants=systemd-journald.service
+
+[Service]
+Type=simple
+ExecStart=/usr/local/bin/fingerprint-watchdog
+
+# The watchdog spends its life blocked on `journalctl --follow`, so a crash or a
+# journald restart must not leave the sensor unprotected.
+Restart=always
+RestartSec=5
+
+# Needs root: it stops a system unit and writes to the sensor's USB device node
+# (root:root, no uaccess ACL). Everything else is taken away.
+NoNewPrivileges=true
+ProtectHome=true
+ProtectSystem=strict
+ProtectKernelTunables=true
+ProtectKernelModules=true
+ProtectControlGroups=true
+RestrictAddressFamilies=AF_UNIX AF_NETLINK
+RestrictNamespaces=true
+RestrictRealtime=true
+LockPersonality=true
+MemoryDenyWriteExecute=true
+PrivateTmp=true
+# usbreset(8) opens /dev/bus/usb/*, which PrivateDevices would hide.
+PrivateDevices=false
+
+[Install]
+WantedBy=multi-user.target

@@ -22,6 +22,7 @@ fprintd-enroll      # first open pairs the sensor — see the warning below
 fprintd-verify
 sudo ./setup-pam.sh # sudo + polkit + lock screen
 sudo ./setup-sleep-hook.sh  # survive suspend/resume — see #3 below
+sudo ./setup-watchdog.sh    # recover from an idle wedge — see #4 below
 ```
 
 Then check that the pairing actually persisted — this is the whole ballgame:
@@ -44,13 +45,15 @@ BIOS fingerprint reset, not a brick.
 | `setup-pam.sh` | the PAM wiring Omarchy's wizard would do — `--undo` reverses it |
 | `setup-sleep-hook.sh` | installs `sleep-hook/fingerprint-reset` — `--undo` reverses it |
 | `sleep-hook/` | the systemd sleep hook that keeps the sensor sane across suspend |
+| `setup-watchdog.sh` | installs `watchdog/` as a systemd service — `--undo` reverses it |
+| `watchdog/` | watches fprintd for the idle wedge and clears it unattended |
 | `pkgbuild/libfprint/` | the AUR PKGBUILD, pinned to a reviewed commit |
 | `pkgbuild/fprintd/` | Arch's PKGBUILD + the persistence patch + the vendored signing key |
 
 Built `.pkg.tar.zst` files are **not** committed — they're machine-built binaries,
 fully reproducible from these PKGBUILDs. `build.sh` regenerates them.
 
-## The three things that will bite you
+## The four things that will bite you
 
 **1. The fprintd patch is mandatory, and upstream's version of it does not work.**
 
@@ -149,6 +152,54 @@ to say so. Hence the `logger` calls in the hook: after any suspend,
 And beware short test suspends — a 9-second suspend won't reproduce the wedge no matter
 what, so only a genuinely long one proves anything.
 
+**4. It also wedges while sitting idle, with nobody touching it.**
+
+Suspend is not the only way in. On a locked, awake machine the sensor stops reading on
+its own after a few minutes. Two things combine. First, verification stays armed for the
+whole lock — which is correct, and what `timeout=-1` in the lock PAM file buys (see
+below) — so the driver sits in "wait for finger" indefinitely. Second, that USB transfer
+expires about once a minute and is re-armed:
+
+```
+fprintd[4482]: Device reported an error during verify: transfer timed out
+... once a minute, for as long as the machine stays locked ...
+```
+
+That churn is harmless by itself. Eventually, though, one re-arm lands on a sensor that
+has not finished the previous operation, and you get the same dead end as the resume bug:
+
+```
+fprintd[61465]: Device reported an error during verify: The device is still busy with
+                another operation, please try again later.
+fprintd[61465]: User destroyed open device! Not cleaning up properly!
+```
+
+From there the reader is finished for the session. The next fprintd start says so —
+`Sensor is in TLS session but host is not` — because the sensor still believes a session
+is open that the host has lost.
+
+Nothing in the authentication path can recover this. Re-arming verification is precisely
+what the lock screen already does on every error, and it does not help: the stale session
+has to be torn down at the device. Which means the cure is the same two steps the sleep
+hook uses — stop fprintd, `usbreset` the sensor.
+
+`setup-watchdog.sh` installs a root service that follows fprintd's journal and runs those
+two steps when it sees that one line, with a 90-second cooldown. So the sensor is working
+again before you walk up to the machine, and you never type a password to fix the thing
+you use instead of a password.
+
+It keys on `still busy with another operation` and nothing else, deliberately.
+`transfer timed out` is the normal once-a-minute churn — acting on it would reset the
+sensor all day. And `Sensor is in TLS session but host is not` is the *symptom*, logged
+by the next fprintd start seconds after a recovery, so triggering on it would reset the
+device again every cooldown, forever.
+
+`journalctl -t fingerprint-watchdog` tells you whether it fired and what it did.
+
+Note this is a driver bug being papered over, not a fix. The real repair is in
+`synatlsmoc`'s handling of a re-armed verify; until that lands upstream, recovering
+automatically beats recovering by hand.
+
 ## Keeping it through upgrades
 
 `pacman -Syu` will replace the patched `fprintd` with Arch's as soon as Arch bumps it,
@@ -171,7 +222,15 @@ sudo systemctl stop fprintd && sudo usbreset 06cb:00ff
 ```
 
 That drops the stuck claim and clears the sensor. Install the sleep hook above so it
-stops recurring.
+stops recurring across suspend, and the watchdog so an idle wedge clears itself without
+you having to run anything at all.
+
+Check whether the watchdog already handled it before reaching for the command above:
+
+```sh
+journalctl -t fingerprint-watchdog -n 10
+systemctl status omarchy-fingerprint-watchdog.service
+```
 
 systemd's `60-autosuspend-fingerprint-reader.hwdb` sets `ID_AUTOSUSPEND=1` for
 `06CB:00FF`, and the relink work on this same sensor found it corrupts the reply to
