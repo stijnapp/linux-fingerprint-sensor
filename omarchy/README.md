@@ -22,7 +22,7 @@ fprintd-enroll      # first open pairs the sensor — see the warning below
 fprintd-verify
 sudo ./setup-pam.sh # sudo + polkit + lock screen
 sudo ./setup-sleep-hook.sh  # survive suspend/resume — see #3 below
-sudo ./setup-watchdog.sh    # recover from an idle wedge — see #4 below
+sudo ./setup-watchdog.sh    # recover unattended — see #4 and #5 below
 ```
 
 Then check that the pairing actually persisted — this is the whole ballgame:
@@ -46,14 +46,14 @@ BIOS fingerprint reset, not a brick.
 | `setup-sleep-hook.sh` | installs `sleep-hook/fingerprint-reset` — `--undo` reverses it |
 | `sleep-hook/` | the systemd sleep hook that keeps the sensor sane across suspend |
 | `setup-watchdog.sh` | installs `watchdog/` as a systemd service — `--undo` reverses it |
-| `watchdog/` | watches fprintd for the idle wedge and clears it unattended |
+| `watchdog/` | watches fprintd for the failures in #4 and #5 and clears them unattended |
 | `pkgbuild/libfprint/` | the AUR PKGBUILD, pinned to a reviewed commit |
 | `pkgbuild/fprintd/` | Arch's PKGBUILD + the persistence patch + the vendored signing key |
 
 Built `.pkg.tar.zst` files are **not** committed — they're machine-built binaries,
 fully reproducible from these PKGBUILDs. `build.sh` regenerates them.
 
-## The four things that will bite you
+## The five things that will bite you
 
 **1. The fprintd patch is mandatory, and upstream's version of it does not work.**
 
@@ -174,9 +174,7 @@ fprintd[61465]: Device reported an error during verify: The device is still busy
 fprintd[61465]: User destroyed open device! Not cleaning up properly!
 ```
 
-From there the reader is finished for the session. The next fprintd start says so —
-`Sensor is in TLS session but host is not` — because the sensor still believes a session
-is open that the host has lost.
+From there the reader is finished for the session.
 
 Nothing in the authentication path can recover this. Re-arming verification is precisely
 what the lock screen already does on every error, and it does not help: the stale session
@@ -188,17 +186,45 @@ two steps when it sees that one line, with a 90-second cooldown. So the sensor i
 again before you walk up to the machine, and you never type a password to fix the thing
 you use instead of a password.
 
-It keys on `still busy with another operation` and nothing else, deliberately.
-`transfer timed out` is the normal once-a-minute churn — acting on it would reset the
-sensor all day. And `Sensor is in TLS session but host is not` is the *symptom*, logged
-by the next fprintd start seconds after a recovery, so triggering on it would reset the
-device again every cooldown, forever.
+It does not act on `transfer timed out`, deliberately: that is the normal once-a-minute
+churn, and acting on it would reset the sensor all day.
 
 `journalctl -t fingerprint-watchdog` tells you whether it fired and what it did.
 
 Note this is a driver bug being papered over, not a fix. The real repair is in
 `synatlsmoc`'s handling of a re-armed verify; until that lands upstream, recovering
 automatically beats recovering by hand.
+
+**5. After a resume, fprintd itself can come back dead — even with the sleep hook.**
+
+The sleep hook stops fprintd on the way down, but the lock screen is mid-verify at that
+moment, so the device is never closed and the sensor keeps its TLS session. A
+`usbreset` does not clear that: the session lives in the sensor's firmware. So the first
+fprintd after every locked suspend logs
+
+```
+fprintd[49171]: Sensor is in TLS session but host is not
+```
+
+and the driver force-closes the session on the sensor side. Sometimes that open carries
+on and the reader works. Often it does not: that fprintd process is left unable to open
+the device, and every claim fails within milliseconds — no prompt, no USB traffic — about
+four times a second, until you type your password:
+
+```
+quickshell.service.pam.subprocess: Error while authenticating:
+    "Authentication service cannot retrieve authentication info" (code 9)
+```
+
+The sensor is fine by then. The next fprintd process always reads, and never repeats the
+warning. So the cure is to replace the process, not reset the device.
+
+The warning alone doesn't separate the two cases, so the watchdog doesn't act on it
+blindly. It watches that same daemon for three seconds, and restarts it only if it never
+starts waiting for a finger (`finger-needed` on fprintd's device object, readable by
+anyone). The lock screen's next retry then brings up a fresh daemon. At most three
+restarts per ten minutes, so a failure that survives a fresh daemon gets logged, not
+looped on.
 
 ## Keeping it through upgrades
 
@@ -222,7 +248,7 @@ sudo systemctl stop fprintd && sudo usbreset 06cb:00ff
 ```
 
 That drops the stuck claim and clears the sensor. Install the sleep hook above so it
-stops recurring across suspend, and the watchdog so an idle wedge clears itself without
+stops recurring across suspend, and the watchdog so the rest clears itself without
 you having to run anything at all.
 
 Check whether the watchdog already handled it before reaching for the command above:

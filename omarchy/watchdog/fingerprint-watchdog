@@ -1,56 +1,62 @@
 #!/bin/bash
-# Watch fprintd for the wedge that stops the Synaptics Tudor sensor reading, and
-# clear it. Runs as root from omarchy-fingerprint-watchdog.service.
+# Watch fprintd for the two ways the Synaptics Tudor sensor stops reading, and
+# clear them. Runs as root from omarchy-fingerprint-watchdog.service.
 #
-# THE PROBLEM
-# The sensor stops responding while nobody is near the machine. Verification is
-# armed for the whole lock (pam_fprintd timeout=-1), and the driver's "wait for
-# finger" USB transfer expires about once a minute, which on its own is
-# harmless churn:
+# FAILURE 1 -- THE IDLE WEDGE
+# Verification is armed for the whole lock (pam_fprintd timeout=-1), and the
+# driver's "wait for finger" USB transfer expires about once a minute, which on
+# its own is harmless churn:
 #
 #   fprintd[4482]: Device reported an error during verify: transfer timed out
-#   ... x11, once a minute ...
 #
-# but eventually one of those re-arms lands on a sensor that has not finished
-# the previous operation, and it answers:
+# but sometimes one of those re-arms -- or the cancel logind triggers when the
+# machine suspends mid-verify -- lands on a sensor that has not finished the
+# previous operation, and it answers:
 #
 #   fprintd[61465]: Device reported an error during verify: The device is still
 #                   busy with another operation, please try again later.
 #   fprintd[61465]: User destroyed open device! Not cleaning up properly!
 #
-# From that point the reader is dead for the rest of the session. The next
-# fprintd start says so out loud -- "Sensor is in TLS session but host is not" --
-# because the sensor still believes a session is open that the host has lost.
-#
-# Nothing in the authentication path can recover this. Re-arming verification is
-# exactly what the lock screen already does on every error, and it does not
-# help: the stale session has to be torn down at the device.
-#
-# THE FIX -- the two steps the suspend hook (sleep-hook/fingerprint-reset)
-# already proves work for the identical failure after resume:
+# From that point the reader is dead. Nothing in the authentication path can
+# recover it -- re-arming is exactly what the lock screen already does on every
+# error. The fix is the suspend hook's two steps (sleep-hook/fingerprint-reset):
 #   1. stop fprintd, so the claim is dropped and the device closed
-#   2. reset the USB device, so the residual TLS session and any queued
-#      operation are gone
+#   2. reset the USB device, so any queued operation is gone
 #
-# fprintd is D-Bus activated, so stopping it costs nothing. The lock screen's
-# in-flight PAM session errors out when the daemon goes away, and the lock
-# service re-arms fingerprint auth on that error by itself (fingerprintRetryTimer
-# in the Omarchy lock Service.qml) -- which starts a fresh fprintd against a
-# clean device. So recovery needs no cooperation from the lock screen, and
-# nothing has to be pressed: by the time anyone walks up to the machine the
-# sensor is already working again.
+# FAILURE 2 -- THE DEAD DAEMON AFTER RESUME
+# Every suspend while locked goes down with the lock screen mid-verify, so the
+# sensor keeps a TLS session the host has lost (a USB reset does not clear it;
+# it lives in the sensor's firmware). The first fprintd after resume notices:
 #
-# WHY ONLY THIS ONE SIGNATURE
-# "still busy with another operation" is the definitive wedge and never appears
-# in healthy operation. Two nearby lines are deliberately NOT triggers:
+#   fprintd[49171]: Sensor is in TLS session but host is not
 #
+# and the driver force-closes the session on the sensor side. Often that open
+# then carries on and the reader works. Often it does not: that fprintd process
+# is left unable to open the device, and every claim from then on fails within
+# milliseconds, without touching USB, until the daemon exits:
+#
+#   quickshell.service.pam.subprocess: Error while authenticating:
+#       "Authentication service cannot retrieve authentication info" (code 9)
+#   ... about four times a second, until the password is typed ...
+#
+# The sensor itself is fine by then -- the next fprintd process always reads,
+# and never repeats the warning. So the fix is to replace the process: stop
+# fprintd, and the lock screen's next retry D-Bus-activates a fresh one. No USB
+# reset: it would not help, and the session it cannot clear is already closed.
+#
+# The warning alone is not proof of failure 2, since the working case logs it
+# too. What tells them apart is whether the sensor gets armed. So on the warning
+# we watch that same daemon for a few seconds, and only restart it if it never
+# starts waiting for a finger (fprintd's public finger-needed property).
+#
+# fprintd is D-Bus activated, so stopping it costs nothing. The lock screen
+# re-arms fingerprint auth on every PAM error by itself (fingerprintRetryTimer in
+# the Omarchy lock Service.qml), which starts a fresh fprintd. So recovery needs
+# no cooperation from the lock screen, and nothing has to be pressed.
+#
+# WHAT IS DELIBERATELY NOT A TRIGGER
 #   "transfer timed out"  -- normal once-a-minute churn while armed. Acting on
 #                            it would reset the sensor all day.
-#   "Sensor is in TLS session but host is not"
-#                         -- the *symptom* of an already-wedged sensor, logged by
-#                            the next fprintd start, i.e. seconds after we have
-#                            just recovered. Triggering on it would reset the
-#                            device again every cooldown, forever.
 #
 # Logged, so "did it fire?" is answerable after the fact with:
 #   journalctl -t fingerprint-watchdog
@@ -61,11 +67,22 @@ SENSOR_ID="${FINGERPRINT_SENSOR_ID:-06cb:00ff}"
 # Long enough that one wedge cannot produce a second reset from its own
 # aftermath, short enough that a genuine re-wedge is still caught promptly.
 COOLDOWN="${FINGERPRINT_WATCHDOG_COOLDOWN:-90}"
+# How long a daemon that just met a stale TLS session gets to arm the sensor.
+# A healthy one is waiting for a finger within half a second.
+ARM_GRACE="${FINGERPRINT_WATCHDOG_ARM_GRACE:-3}"
+# Restarts allowed per STALE_WINDOW seconds. If fresh daemons keep failing the
+# same way, something else is wrong, and a restart loop would only hide it.
+STALE_MAX_RESTARTS=3
+STALE_WINDOW=600
+
 WEDGE_SIGNATURE="still busy with another operation"
+STALE_SIGNATURE="Sensor is in TLS session but host is not"
+
+FPRINT_BUS=net.reactivated.Fprint
 
 log() { logger -t fingerprint-watchdog "$*"; }
 
-recover() {
+stop_fprintd() {
     # Bounded: a wedged fprintd must not leave the watchdog hanging. systemd's
     # default stop timeout is 90s, which would be a long time to be broken.
     if timeout 5 systemctl stop fprintd.service 2>/dev/null; then
@@ -74,6 +91,10 @@ recover() {
         systemctl kill -s KILL fprintd.service 2>/dev/null
         log "fprintd did not stop in 5s, killed it"
     fi
+}
+
+recover_wedge() {
+    stop_fprintd
 
     # The device may not be re-enumerated the instant the daemon lets go.
     local attempt
@@ -89,28 +110,79 @@ recover() {
     return 1
 }
 
-log "watching fprintd for \"$WEDGE_SIGNATURE\" (sensor $SENSOR_ID, cooldown ${COOLDOWN}s)"
+fprintd_pid() { systemctl show --property MainPID --value fprintd.service; }
 
-# -n 0 so a wedge already in the backlog from a previous boot cannot fire on
+# True while fprintd is waiting for a finger or reading one. --auto-start=no so
+# asking never starts a daemon that is not already running.
+sensor_armed() {
+    local dev prop
+    dev=$(busctl --system --auto-start=no call "$FPRINT_BUS" \
+            /net/reactivated/Fprint/Manager "$FPRINT_BUS.Manager" \
+            GetDefaultDevice 2>/dev/null) || return 1
+    dev=${dev#o }
+    dev=${dev//\"/}
+    for prop in finger-needed finger-present; do
+        if [ "$(busctl --system --auto-start=no get-property "$FPRINT_BUS" \
+                  "$dev" "$FPRINT_BUS.Device" "$prop" 2>/dev/null)" = "b true" ]; then
+            return 0
+        fi
+    done
+    return 1
+}
+
+# The daemon that logged the stale-session warning gets ARM_GRACE seconds to
+# start waiting for a finger. If it does, this was the harmless case.
+check_stale() {
+    local pid=$1 i
+    for ((i = 0; i < ARM_GRACE * 2; i++)); do
+        sleep 0.5
+        # Gone or replaced already (idle exit, the sleep hook, a password
+        # unlock): nothing left to fix.
+        [ "$(fprintd_pid)" = "$pid" ] || return 0
+        sensor_armed && return 0
+    done
+
+    local now
+    now=$(date +%s)
+    if [ $((now - stale_window_start)) -ge "$STALE_WINDOW" ]; then
+        stale_window_start=$now
+        stale_restarts=0
+    fi
+    if [ "$stale_restarts" -ge "$STALE_MAX_RESTARTS" ]; then
+        log "fprintd $pid never armed after a stale TLS session, but that is $stale_restarts restarts in ${STALE_WINDOW}s already -- leaving it alone"
+        return 0
+    fi
+    stale_restarts=$((stale_restarts + 1))
+
+    log "fprintd $pid never armed the sensor ${ARM_GRACE}s after a stale TLS session -- restarting it"
+    stop_fprintd
+}
+
+log "watching fprintd (sensor $SENSOR_ID, wedge cooldown ${COOLDOWN}s, arm grace ${ARM_GRACE}s)"
+
+# -n 0 so a line already in the backlog from a previous boot cannot fire on
 # startup; --follow keeps this process alive, which is the service's whole job.
 last_recovery=0
+stale_window_start=0
+stale_restarts=0
 
 journalctl --unit fprintd.service --follow --lines 0 --output cat 2>/dev/null |
     while IFS= read -r line; do
         case "$line" in
-            *"$WEDGE_SIGNATURE"*) ;;
-            *) continue ;;
+            *"$WEDGE_SIGNATURE"*)
+                now=$(date +%s)
+                if [ $((now - last_recovery)) -lt "$COOLDOWN" ]; then
+                    log "wedge again $((now - last_recovery))s after the last reset, inside the ${COOLDOWN}s cooldown -- leaving it alone"
+                    continue
+                fi
+                last_recovery=$now
+                log "wedge detected: $line"
+                recover_wedge
+                ;;
+            *"$STALE_SIGNATURE"*)
+                check_stale "$(fprintd_pid)"
+                ;;
         esac
-
-        now=$(date +%s)
-        if [ $((now - last_recovery)) -lt "$COOLDOWN" ]; then
-            log "wedge again $((now - last_recovery))s after the last reset, inside the ${COOLDOWN}s cooldown -- leaving it alone"
-            continue
-        fi
-
-        last_recovery=$now
-        log "wedge detected: $line"
-        recover
     done
 
 # Only reached if journalctl dies; the unit restarts us.

@@ -4,15 +4,18 @@
 #   sudo ./setup-watchdog.sh          # install and start
 #   sudo ./setup-watchdog.sh --undo   # stop and remove again
 #
-# See watchdog/fingerprint-watchdog for the full explanation. Short version: the
-# sensor stops reading while idle -- the driver's "wait for finger" transfer
-# expires about once a minute, and eventually one re-arm hits a sensor that has
-# not finished the last operation ("The device is still busy with another
-# operation"). From then on the reader is dead until the daemon is stopped and
-# the USB device reset, which is the same pair of steps the suspend hook does.
+# See watchdog/fingerprint-watchdog for the full explanation. Short version, two
+# failures, each recognised from fprintd's journal:
 #
-# This watches fprintd's journal for that one line and does those two steps, so
-# the sensor is already working again by the time anyone walks up to the machine.
+#   - the sensor wedges ("The device is still busy with another operation") and
+#     stays dead until the daemon is stopped and the USB device reset -- the same
+#     pair of steps the suspend hook does;
+#   - after a resume, fprintd meets the sensor's stale TLS session ("Sensor is in
+#     TLS session but host is not") and that daemon never arms the sensor again
+#     -- fixed by replacing the daemon.
+#
+# Either way the sensor is working again by the time anyone tries it, with
+# nothing to press.
 set -euo pipefail
 
 [ "$(id -u)" -eq 0 ] || { echo "needs root: sudo $0 $*" >&2; exit 1; }
@@ -44,15 +47,17 @@ install -Dm644 "$DIR/watchdog/$UNIT_NAME" "$UNIT_DEST"
 echo "installed $UNIT_DEST"
 
 systemctl daemon-reload
-systemctl enable --now "$UNIT_NAME"
-echo "enabled and started $UNIT_NAME"
+systemctl enable "$UNIT_NAME"
+# restart, not start: on a re-install the old script is still the one running.
+systemctl restart "$UNIT_NAME"
+echo "enabled and (re)started $UNIT_NAME"
 
 echo
 echo "Confirm it is watching:"
 echo "    journalctl -t fingerprint-watchdog -n 5"
 echo
 echo "It should print a line like:"
-echo "    watching fprintd for \"still busy with another operation\" ..."
+echo "    watching fprintd (sensor 06cb:00ff, wedge cooldown 90s, arm grace 3s)"
 echo
-echo "Nothing more to do -- it fires on its own the next time the sensor wedges,"
+echo "Nothing more to do -- it fires on its own the next time the sensor dies,"
 echo "and logs what it did to the same journal tag."
