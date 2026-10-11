@@ -1,8 +1,8 @@
 #!/bin/bash
-# Watch fprintd for the two ways the Synaptics Tudor sensor stops reading, and
-# clear them. Runs as root from omarchy-fingerprint-watchdog.service.
+# Watch fprintd and the lock screen for the ways the Synaptics Tudor sensor stops
+# reading, and clear them. Runs as root from omarchy-fingerprint-watchdog.service.
 #
-# FAILURE 1 -- THE IDLE WEDGE
+# FAILURE 1 -- THE WEDGE
 # Verification is armed for the whole lock (pam_fprintd timeout=-1), and the
 # driver's "wait for finger" USB transfer expires about once a minute, which on
 # its own is harmless churn:
@@ -23,40 +23,45 @@
 #   1. stop fprintd, so the claim is dropped and the device closed
 #   2. reset the USB device, so any queued operation is gone
 #
-# FAILURE 2 -- THE DEAD DAEMON AFTER RESUME
-# Every suspend while locked goes down with the lock screen mid-verify, so the
-# sensor keeps a TLS session the host has lost (a USB reset does not clear it;
-# it lives in the sensor's firmware). The first fprintd after resume notices:
+# FAILURE 2 -- A DEAD FPRINTD
+# After a resume, the fprintd process itself often comes back unable to use the
+# device. Two causes seen so far:
 #
-#   fprintd[49171]: Sensor is in TLS session but host is not
+#   - the sensor kept a TLS session across the suspend (a USB reset does not
+#     clear it), the first fprintd force-closes it, and is left broken:
+#       fprintd[49171]: Sensor is in TLS session but host is not
+#   - the lock screen started fprintd before the sleep hook's USB reset ran,
+#     and the reset pulled the device out from under it:
+#       fprintd[51467]: libusb: error [release_interface] release interface
+#                       failed, errno=22
 #
-# and the driver force-closes the session on the sensor side. Often that open
-# then carries on and the reader works. Often it does not: that fprintd process
-# is left unable to open the device, and every claim from then on fails within
-# milliseconds, without touching USB, until the daemon exits:
+# Either way the sensor is fine; the process is not. It fails every claim within
+# milliseconds, without touching USB, and the lock screen -- which retries 250ms
+# after every error -- turns that into a burst, until the password is typed:
 #
-#   quickshell.service.pam.subprocess: Error while authenticating:
+#   omarchy-shell: quickshell.service.pam.subprocess: Error while authenticating:
 #       "Authentication service cannot retrieve authentication info" (code 9)
-#   ... about four times a second, until the password is typed ...
+#   ... about four times a second ...
 #
-# The sensor itself is fine by then -- the next fprintd process always reads,
-# and never repeats the warning. So the fix is to replace the process: stop
-# fprintd, and the lock screen's next retry D-Bus-activates a fresh one. No USB
-# reset: it would not help, and the session it cannot clear is already closed.
+# A fresh fprintd process always reads. So the fix is to replace the process:
+# stop fprintd, and the lock screen's next retry D-Bus-activates a new one.
 #
-# The warning alone is not proof of failure 2, since the working case logs it
-# too. What tells them apart is whether the sensor gets armed. So on the warning
-# we watch that same daemon for a few seconds, and only restart it if it never
-# starts waiting for a finger (fprintd's public finger-needed property).
+# Rather than chase each cause by its log line (the first version of this did,
+# and the second cause slipped straight past it), this watches for the symptom:
+# a burst of those instant failures. A healthy lock produces one a minute, when
+# the transfer above times out. To be sure, the daemon then gets a moment to
+# prove it is armed (fprintd's public finger-needed property) before it is
+# replaced.
 #
-# fprintd is D-Bus activated, so stopping it costs nothing. The lock screen
-# re-arms fingerprint auth on every PAM error by itself (fingerprintRetryTimer in
-# the Omarchy lock Service.qml), which starts a fresh fprintd. So recovery needs
-# no cooperation from the lock screen, and nothing has to be pressed.
+# fprintd is D-Bus activated, so stopping it costs nothing, and the lock screen
+# re-arms on every error by itself (fingerprintRetryTimer in the Omarchy lock
+# Service.qml). So recovery needs no cooperation from the lock screen, and
+# nothing has to be pressed.
 #
 # WHAT IS DELIBERATELY NOT A TRIGGER
 #   "transfer timed out"  -- normal once-a-minute churn while armed. Acting on
 #                            it would reset the sensor all day.
+#   a single code 9       -- that same timeout, as the lock screen sees it.
 #
 # Logged, so "did it fire?" is answerable after the fact with:
 #   journalctl -t fingerprint-watchdog
@@ -67,20 +72,27 @@ SENSOR_ID="${FINGERPRINT_SENSOR_ID:-06cb:00ff}"
 # Long enough that one wedge cannot produce a second reset from its own
 # aftermath, short enough that a genuine re-wedge is still caught promptly.
 COOLDOWN="${FINGERPRINT_WATCHDOG_COOLDOWN:-90}"
-# How long a daemon that just met a stale TLS session gets to arm the sensor.
-# A healthy one is waiting for a finger within half a second.
-ARM_GRACE="${FINGERPRINT_WATCHDOG_ARM_GRACE:-3}"
-# Restarts allowed per STALE_WINDOW seconds. If fresh daemons keep failing the
-# same way, something else is wrong, and a restart loop would only hide it.
-STALE_MAX_RESTARTS=3
-STALE_WINDOW=600
+# A dead daemon fails ~4 times a second; a healthy one once a minute.
+BURST_COUNT=6
+BURST_WINDOW=3
+# How long a daemon under suspicion gets to show it is armed.
+ARM_GRACE=2
+# After acting, ignore the failures already queued in the journal behind us, and
+# give the fresh daemon time to come up.
+HOLD_OFF=10
+# Restarts allowed per RESTART_WINDOW seconds. If fresh daemons keep failing
+# the same way, something else is wrong, and a restart loop would only hide it.
+MAX_RESTARTS=3
+RESTART_WINDOW=600
 
 WEDGE_SIGNATURE="still busy with another operation"
-STALE_SIGNATURE="Sensor is in TLS session but host is not"
+FAIL_SIGNATURE='Error while authenticating: "Authentication service cannot retrieve authentication info"'
 
 FPRINT_BUS=net.reactivated.Fprint
 
 log() { logger -t fingerprint-watchdog "$*"; }
+
+fprintd_pid() { systemctl show --property MainPID --value fprintd.service; }
 
 stop_fprintd() {
     # Bounded: a wedged fprintd must not leave the watchdog hanging. systemd's
@@ -96,11 +108,21 @@ stop_fprintd() {
 recover_wedge() {
     stop_fprintd
 
+    # The lock screen retries 250ms after the error our stop causes, so a new
+    # fprintd may already have the device open by the time we reset it. A reset
+    # under an open daemon kills its handle -- failure 2 -- so if one was
+    # running across the reset, replace it too.
+    local pid_before attempt
+    pid_before=$(fprintd_pid)
+
     # The device may not be re-enumerated the instant the daemon lets go.
-    local attempt
     for attempt in 1 2 3 4 5; do
         if usbreset "$SENSOR_ID" >/dev/null 2>&1; then
             log "reset $SENSOR_ID on attempt $attempt -- sensor should read again"
+            if [ "$pid_before" != 0 ] && [ "$(fprintd_pid)" = "$pid_before" ]; then
+                log "fprintd $pid_before started before the reset, replacing it"
+                stop_fprintd
+            fi
             return 0
         fi
         sleep 0.5
@@ -109,8 +131,6 @@ recover_wedge() {
     log "FAILED to reset $SENSOR_ID after 5 attempts"
     return 1
 }
-
-fprintd_pid() { systemctl show --property MainPID --value fprintd.service; }
 
 # True while fprintd is waiting for a finger or reading one. --auto-start=no so
 # asking never starts a daemon that is not already running.
@@ -130,43 +150,52 @@ sensor_armed() {
     return 1
 }
 
-# The daemon that logged the stale-session warning gets ARM_GRACE seconds to
-# start waiting for a finger. If it does, this was the harmless case.
-check_stale() {
-    local pid=$1 i
-    for ((i = 0; i < ARM_GRACE * 2; i++)); do
-        sleep 0.5
-        # Gone or replaced already (idle exit, the sleep hook, a password
-        # unlock): nothing left to fix.
-        [ "$(fprintd_pid)" = "$pid" ] || return 0
-        sensor_armed && return 0
-    done
-
-    local now
-    now=$(date +%s)
-    if [ $((now - stale_window_start)) -ge "$STALE_WINDOW" ]; then
-        stale_window_start=$now
-        stale_restarts=0
-    fi
-    if [ "$stale_restarts" -ge "$STALE_MAX_RESTARTS" ]; then
-        log "fprintd $pid never armed after a stale TLS session, but that is $stale_restarts restarts in ${STALE_WINDOW}s already -- leaving it alone"
+# The lock screen just failed BURST_COUNT times in a row, instantly.
+check_dead_daemon() {
+    local pid i now
+    pid=$(fprintd_pid)
+    if [ "$pid" = 0 ]; then
+        log "lock screen cannot reach fprintd, and it is not running -- nothing to replace"
         return 0
     fi
-    stale_restarts=$((stale_restarts + 1))
 
-    log "fprintd $pid never armed the sensor ${ARM_GRACE}s after a stale TLS session -- restarting it"
+    for ((i = 0; i < ARM_GRACE * 2; i++)); do
+        sensor_armed && return 0
+        sleep 0.5
+        # Gone or replaced already (idle exit, the sleep hook): nothing to fix.
+        [ "$(fprintd_pid)" = "$pid" ] || return 0
+    done
+
+    now=$(date +%s)
+    if [ $((now - restart_window_start)) -ge "$RESTART_WINDOW" ]; then
+        restart_window_start=$now
+        restarts=0
+    fi
+    if [ "$restarts" -ge "$MAX_RESTARTS" ]; then
+        log "fprintd $pid is failing every claim, but that is $restarts restarts in ${RESTART_WINDOW}s already -- leaving it alone"
+        return 0
+    fi
+    restarts=$((restarts + 1))
+
+    log "fprintd $pid is failing every claim and never arms the sensor -- replacing it"
     stop_fprintd
 }
 
-log "watching fprintd (sensor $SENSOR_ID, wedge cooldown ${COOLDOWN}s, arm grace ${ARM_GRACE}s)"
+log "watching fprintd and the lock screen (sensor $SENSOR_ID, wedge cooldown ${COOLDOWN}s, burst ${BURST_COUNT} in ${BURST_WINDOW}s)"
 
-# -n 0 so a line already in the backlog from a previous boot cannot fire on
-# startup; --follow keeps this process alive, which is the service's whole job.
 last_recovery=0
-stale_window_start=0
-stale_restarts=0
+burst_start=0
+burst_count=0
+hold_until=0
+restart_window_start=0
+restarts=0
 
-journalctl --unit fprintd.service --follow --lines 0 --output cat 2>/dev/null |
+# fprintd's own messages, plus the lock screen's PAM results (omarchy-shell runs
+# in the user session; root's journalctl sees that journal too). -n 0 so a line
+# in the backlog from before we started cannot fire; --follow keeps this process
+# alive, which is the service's whole job.
+journalctl --follow --lines 0 --output cat \
+        _SYSTEMD_UNIT=fprintd.service + SYSLOG_IDENTIFIER=omarchy-shell 2>/dev/null |
     while IFS= read -r line; do
         case "$line" in
             *"$WEDGE_SIGNATURE"*)
@@ -176,11 +205,23 @@ journalctl --unit fprintd.service --follow --lines 0 --output cat 2>/dev/null |
                     continue
                 fi
                 last_recovery=$now
+                hold_until=$((now + HOLD_OFF))
                 log "wedge detected: $line"
                 recover_wedge
                 ;;
-            *"$STALE_SIGNATURE"*)
-                check_stale "$(fprintd_pid)"
+            *"$FAIL_SIGNATURE"*)
+                now=$(date +%s)
+                [ "$now" -lt "$hold_until" ] && continue
+                if [ $((now - burst_start)) -ge "$BURST_WINDOW" ]; then
+                    burst_start=$now
+                    burst_count=0
+                fi
+                burst_count=$((burst_count + 1))
+                [ "$burst_count" -lt "$BURST_COUNT" ] && continue
+
+                burst_count=0
+                check_dead_daemon
+                hold_until=$(($(date +%s) + HOLD_OFF))
                 ;;
         esac
     done

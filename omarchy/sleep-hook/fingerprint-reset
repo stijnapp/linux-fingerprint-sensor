@@ -52,10 +52,26 @@ case "$1" in
     fi
     ;;
   post)
+    # User sessions are not always frozen across suspend, so the lock screen may
+    # already have started fprintd and opened the sensor by the time we run. A
+    # reset under an open daemon kills its device handle -- it then fails every
+    # claim instantly until it exits:
+    #   fprintd[51467]: libusb: error [release_interface] release interface
+    #                   failed, errno=22
+    # so a daemon that was running across the reset is replaced afterwards. The
+    # lock screen's next retry starts a fresh one.
+    pid_before=$(systemctl show --property MainPID --value fprintd.service)
+
     # The sensor may not be re-enumerated yet the instant we resume.
     for attempt in 1 2 3 4 5; do
       if usbreset "$SENSOR_ID" >/dev/null 2>&1; then
         log "post: reset $SENSOR_ID on attempt $attempt"
+        if [ "$pid_before" != 0 ] &&
+           [ "$(systemctl show --property MainPID --value fprintd.service)" = "$pid_before" ]; then
+          timeout 5 systemctl stop fprintd.service 2>/dev/null ||
+            systemctl kill -s KILL fprintd.service 2>/dev/null
+          log "post: fprintd $pid_before had the sensor open across the reset, replaced it"
+        fi
         exit 0
       fi
       sleep 0.5

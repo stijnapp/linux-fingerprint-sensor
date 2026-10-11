@@ -10,9 +10,9 @@
 #   - the sensor wedges ("The device is still busy with another operation") and
 #     stays dead until the daemon is stopped and the USB device reset -- the same
 #     pair of steps the suspend hook does;
-#   - after a resume, fprintd meets the sensor's stale TLS session ("Sensor is in
-#     TLS session but host is not") and that daemon never arms the sensor again
-#     -- fixed by replacing the daemon.
+#   - after a resume, the fprintd process itself comes back unable to use the
+#     device and the lock screen fails instantly, several times a second --
+#     fixed by replacing the daemon.
 #
 # Either way the sensor is working again by the time anyone tries it, with
 # nothing to press.
@@ -57,7 +57,7 @@ echo "Confirm it is watching:"
 echo "    journalctl -t fingerprint-watchdog -n 5"
 echo
 echo "It should print a line like:"
-echo "    watching fprintd (sensor 06cb:00ff, wedge cooldown 90s, arm grace 3s)"
+echo "    watching fprintd and the lock screen (sensor 06cb:00ff, ...)"
 echo
 echo "Nothing more to do -- it fires on its own the next time the sensor dies,"
 echo "and logs what it did to the same journal tag."

@@ -197,34 +197,40 @@ automatically beats recovering by hand.
 
 **5. After a resume, fprintd itself can come back dead — even with the sleep hook.**
 
-The sleep hook stops fprintd on the way down, but the lock screen is mid-verify at that
-moment, so the device is never closed and the sensor keeps its TLS session. A
-`usbreset` does not clear that: the session lives in the sensor's firmware. So the first
-fprintd after every locked suspend logs
-
-```
-fprintd[49171]: Sensor is in TLS session but host is not
-```
-
-and the driver force-closes the session on the sensor side. Sometimes that open carries
-on and the reader works. Often it does not: that fprintd process is left unable to open
-the device, and every claim fails within milliseconds — no prompt, no USB traffic — about
-four times a second, until you type your password:
+The sensor is usually fine after a resume. The fprintd *process* often isn't: it comes
+back unable to use the device, fails every claim within milliseconds — no prompt, no USB
+traffic — and the lock screen, which retries 250 ms after every error, turns that into
+about four failures a second until you type your password:
 
 ```
 quickshell.service.pam.subprocess: Error while authenticating:
     "Authentication service cannot retrieve authentication info" (code 9)
 ```
 
-The sensor is fine by then. The next fprintd process always reads, and never repeats the
-warning. So the cure is to replace the process, not reset the device.
+Two ways in have turned up so far:
 
-The warning alone doesn't separate the two cases, so the watchdog doesn't act on it
-blindly. It watches that same daemon for three seconds, and restarts it only if it never
-starts waiting for a finger (`finger-needed` on fprintd's device object, readable by
-anyone). The lock screen's next retry then brings up a fresh daemon. At most three
-restarts per ten minutes, so a failure that survives a fresh daemon gets logged, not
-looped on.
+- The sleep hook stops fprintd on the way down, but the lock screen is mid-verify, so the
+  device is never closed and the sensor keeps its TLS session — in its firmware, where a
+  `usbreset` can't reach it. The first fprintd after resume logs
+  `Sensor is in TLS session but host is not`, force-closes the session, and sometimes
+  carries on fine — and sometimes is left broken.
+- User sessions aren't always frozen across suspend, so the lock screen can start fprintd
+  *before* the sleep hook's resume step runs. The hook's `usbreset` then pulls the device
+  out from under the open daemon:
+  `libusb: error [release_interface] release interface failed, errno=22`.
+
+A fresh fprintd process always reads. So the cure is to replace the process.
+
+The sleep hook now closes the second door itself: if fprintd was already running when it
+reset the sensor, it replaces that daemon. For everything else, the watchdog keys on the
+symptom rather than any one cause — an earlier version watched for the TLS warning, and
+the `errno=22` case walked straight past it. Six of those failures within three seconds
+(a healthy lock produces one a minute, when the transfer in #4 times out), and the daemon
+gets two seconds to prove it's armed — `finger-needed` on fprintd's device object,
+readable by anyone. If it isn't, it's replaced, and the lock screen's next retry brings
+up a fresh one. Replayed over three weeks of real logs, that rule fires on every dead
+lock screen and on nothing else. At most three restarts per ten minutes, so a failure
+that survives a fresh daemon gets logged, not looped on.
 
 ## Keeping it through upgrades
 
